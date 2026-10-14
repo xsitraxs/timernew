@@ -49,6 +49,7 @@ jobs:
           Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.pfx" -Password $password | Out-Null
           Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.cer" | Out-Null
           "CERT_PFX=$env:RUNNER_TEMP\TimerApp.pfx" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CERT_CER=$env:RUNNER_TEMP\TimerApp.cer" | Out-File -FilePath $env:GITHUB_ENV -Append
           Write-Host "Сертификат создан: $($cert.Thumbprint)"
 
@@ -68,8 +69,7 @@ jobs:
             /p:AppxBundle=Always `
             /p:AppxBundlePlatforms="x64" `
             /p:AppxPackageSigningEnabled=true `
-            /p:PackageCertificateKeyFile="$env:CERT_PFX" `
-            /p:PackageCertificatePassword="TimerApp123!"
+            /p:PackageCertificateThumbprint="$env:CERT_THUMBPRINT"
           if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой $LASTEXITCODE" }
 
       - name: Подготовить папку для скачивания
