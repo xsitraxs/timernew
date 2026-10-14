@@ -186,8 +186,30 @@ public sealed class TimerViewModel : ObservableObject
     public double Progress
     {
         get => _progress;
-        private set => SetProperty(ref _progress, value);
+        private set
+        {
+            if (SetProperty(ref _progress, value))
+                OnPropertyChanged(nameof(ProgressPercentText));
+        }
     }
+
+    /// <summary>Осталось в процентах, например «42%».</summary>
+    public string ProgressPercentText => $"{(int)Math.Round(Progress * 100)}%";
+
+    /// <summary>
+    /// Спокойная информационная строка под цифрами: во сколько закончится,
+    /// какая длительность задана и т.п.
+    /// </summary>
+    public string EndTimeText => State switch
+    {
+        TimerState.Running =>
+            "закончится в " + _timer.EndTimeUtc.ToLocalTime().ToString("HH:mm"),
+        TimerState.Paused => "отсчёт приостановлен",
+        TimerState.Finished => "заданное время вышло",
+        _ => InputDuration > TimeSpan.Zero
+            ? "длительность " + TimeFormatter.FormatFriendly(InputDuration)
+            : "задайте длительность"
+    };
 
     // ------------------------------------------------------------------ звук
 
@@ -405,6 +427,8 @@ public sealed class TimerViewModel : ObservableObject
 
         (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
 
+        OnPropertyChanged(nameof(EndTimeText));
+
         if (CanEditInputs)
         {
             // Правка длительности после финиша также глушит сигнал.
@@ -417,6 +441,7 @@ public sealed class TimerViewModel : ObservableObject
 
     private void OnTimerTicked(object? sender, EventArgs e)
     {
+        OnPropertyChanged(nameof(EndTimeText));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
@@ -448,6 +473,7 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(DisplayTime));
+        OnPropertyChanged(nameof(EndTimeText));
 
         (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (PauseCommand as RelayCommand)?.NotifyCanExecuteChanged();
