@@ -69,6 +69,7 @@ public sealed class TimerViewModel : ObservableObject
         ApplyPresetCommand = new RelayCommand<object?>(ApplyPreset);
         ApplyCustomPresetCommand = new RelayCommand<CustomPreset>(ApplyCustomPreset);
         DeleteCustomPresetCommand = new RelayCommand<CustomPreset>(DeleteCustomPreset);
+        AddMinuteCommand = new RelayCommand(AddMinute, () => IsRunning || IsPaused);
         ToggleMuteCommand = new RelayCommand(ToggleMute);
         PreviewSoundCommand = new RelayCommand(() => _sound.PlayPreview());
 
@@ -134,6 +135,9 @@ public sealed class TimerViewModel : ObservableObject
     /// <summary>Кнопка «Старт» видна до запуска и после финиша («Ещё раз»).</summary>
     public bool ShowStart => IsIdle || IsFinished;
 
+    /// <summary>Кнопка «+1 мин» видна во время отсчёта и на паузе.</summary>
+    public bool ShowAddMinute => IsRunning || IsPaused;
+
     public bool IsIdle => State == TimerState.Idle;
     public bool IsRunning => State == TimerState.Running;
     public bool IsPaused => State == TimerState.Paused;
@@ -151,6 +155,9 @@ public sealed class TimerViewModel : ObservableObject
     /// <summary>Цвет точки-индикатора состояния.</summary>
     public Brush StatusBrush => State switch
     {
+        // Последние 10 секунд точка тревожно краснеет.
+        TimerState.Running when Remaining <= TimeSpan.FromSeconds(10)
+            => new SolidColorBrush(Colors.OrangeRed),
         TimerState.Running => new SolidColorBrush(Colors.LimeGreen),
         TimerState.Paused => new SolidColorBrush(Colors.Orange),
         TimerState.Finished => new SolidColorBrush(Colors.OrangeRed),
@@ -304,6 +311,7 @@ public sealed class TimerViewModel : ObservableObject
     public ICommand ApplyPresetCommand { get; }
     public ICommand ApplyCustomPresetCommand { get; }
     public ICommand DeleteCustomPresetCommand { get; }
+    public ICommand AddMinuteCommand { get; }
     public ICommand ToggleMuteCommand { get; }
     public ICommand PreviewSoundCommand { get; }
 
@@ -400,6 +408,9 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(HasCustomPresets));
     }
 
+    /// <summary>«+1 мин» во время отсчёта и паузы.</summary>
+    private void AddMinute() => _timer.AddTime(TimeSpan.FromMinutes(1));
+
     private void ToggleMute() => IsMuted = !IsMuted;
 
     private void ApplyDuration(TimeSpan duration)
@@ -442,6 +453,7 @@ public sealed class TimerViewModel : ObservableObject
     private void OnTimerTicked(object? sender, EventArgs e)
     {
         OnPropertyChanged(nameof(EndTimeText));
+        OnPropertyChanged(nameof(StatusBrush));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
@@ -470,6 +482,7 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(IsFinished));
         OnPropertyChanged(nameof(CanEditInputs));
         OnPropertyChanged(nameof(ShowStart));
+        OnPropertyChanged(nameof(ShowAddMinute));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(DisplayTime));
@@ -478,5 +491,6 @@ public sealed class TimerViewModel : ObservableObject
         (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (PauseCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ResumeCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (AddMinuteCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 }

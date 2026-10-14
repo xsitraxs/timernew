@@ -14,7 +14,10 @@ namespace TimerApp.Services;
 /// </summary>
 public sealed class SoundService : IDisposable
 {
-    private const int AlarmRepeatCount = 3;
+    // Один проход WAV — ~1,1 сек. 30 повторов — около 35 секунд сигнала:
+    // достаточно, чтобы услышать из другой комнаты, но не бесконечно.
+    // Любое действие пользователя (старт/сброс/пауза/mute) глушит раньше.
+    private const int AlarmRepeatCount = 30;
 
     private readonly MediaPlayer _player;
     private int _playsDone;
@@ -40,7 +43,7 @@ public sealed class SoundService : IDisposable
         _player.Volume = isMuted ? 0.0 : Math.Clamp(volume01, 0.0, 1.0);
     }
 
-    /// <summary>Запускает сигнал окончания (повтор до 3 раз).</summary>
+    /// <summary>Запускает сигнал окончания (до ~35 секунд или до действия пользователя).</summary>
     public void PlayAlarm()
     {
         _alarmActive = true;

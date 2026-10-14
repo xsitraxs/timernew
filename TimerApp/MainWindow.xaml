@@ -104,6 +104,7 @@
                     x:Name="CompactButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Click="CompactButton_Click"
+                    AutomationProperties.Name="Компактный размер окна"
                     ToolTipService.ToolTip="Компактный размер окна">
                     <FontIcon Glyph="&#xE740;" FontSize="14" />
                 </Button>
@@ -237,6 +238,14 @@
                             <TextBlock Text="Продолжить" />
                         </StackPanel>
                     </Button>
+                    <Button
+                        Content="+1 мин"
+                        Command="{Binding AddMinuteCommand}"
+                        Visibility="{Binding ShowAddMinute, Converter={StaticResource BoolToVisibility}}"
+                        MinWidth="92"
+                        CornerRadius="8"
+                        Padding="14,10"
+                        ToolTipService.ToolTip="Добавить минуту к текущему отсчёту" />
                     <Button
                         Command="{Binding ResetCommand}"
                         Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"

@@ -142,6 +142,9 @@ public sealed partial class MainWindow : Window
         if (!AppWindow.IsVisible)
             AppWindow.Show();
 
+        // Поднимаем окно поверх остальных: таймер для того и звенел.
+        Activate();
+
         // Мигание крупных цифр до сброса/нового старта.
         if (RootGrid.Resources["FinishedStoryboard"] is Storyboard storyboard)
             storyboard.Begin();
@@ -227,7 +230,7 @@ public sealed partial class MainWindow : Window
             Header = "Минуты",
             Minimum = 0,
             Maximum = 23 * 60 + 59,
-            Value = 10,
+            Value = ViewModel.HoursInput * 60 + ViewModel.MinutesInput,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
         };
 
@@ -236,7 +239,7 @@ public sealed partial class MainWindow : Window
             Header = "Секунды",
             Minimum = 0,
             Maximum = 59,
-            Value = 0,
+            Value = ViewModel.SecondsInput,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
         };
 

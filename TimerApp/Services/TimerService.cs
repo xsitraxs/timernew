@@ -112,6 +112,34 @@ public sealed class TimerService : IDisposable
         Ticked?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Добавляет время к идущему или приостановленному отсчёту
+    /// (кнопка «+1 мин»): дедлайн и длительность честно сдвигаются.
+    /// </summary>
+    public void AddTime(TimeSpan delta)
+    {
+        if (delta <= TimeSpan.Zero)
+            return;
+
+        if (State == TimerState.Running)
+        {
+            Duration += delta;
+            EndTimeUtc += delta;
+            Remaining = GetLiveRemaining();
+        }
+        else if (State == TimerState.Paused)
+        {
+            Duration += delta;
+            Remaining += delta;
+        }
+        else
+        {
+            return;
+        }
+
+        Ticked?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>Сбрасывает таймер к заданной длительности.</summary>
     public void Reset()
     {
