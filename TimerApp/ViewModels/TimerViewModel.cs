@@ -61,7 +61,7 @@ public sealed class TimerViewModel : ObservableObject
         _timer.StateChanged += OnTimerStateChanged;
         _timer.Completed += OnTimerCompleted;
 
-        StartCommand = new RelayCommand(Start, () => IsIdle || IsFinished);
+        StartCommand = new RelayCommand(Start, () => (IsIdle || IsFinished) && InputDuration > TimeSpan.Zero);
         PauseCommand = new RelayCommand(Pause, () => IsRunning);
         ResumeCommand = new RelayCommand(Resume, () => IsPaused);
         ResetCommand = new RelayCommand(Reset);
@@ -85,7 +85,7 @@ public sealed class TimerViewModel : ObservableObject
         get => _hoursInput;
         set
         {
-            if (SetProperty(ref _hoursInput, Math.Clamp(value, 0, 23)))
+            if (SetProperty(ref _hoursInput, SanitizeInput(value, 23)))
                 OnInputDurationChanged();
         }
     }
@@ -95,7 +95,7 @@ public sealed class TimerViewModel : ObservableObject
         get => _minutesInput;
         set
         {
-            if (SetProperty(ref _minutesInput, Math.Clamp(value, 0, 59)))
+            if (SetProperty(ref _minutesInput, SanitizeInput(value, 59)))
                 OnInputDurationChanged();
         }
     }
@@ -105,10 +105,16 @@ public sealed class TimerViewModel : ObservableObject
         get => _secondsInput;
         set
         {
-            if (SetProperty(ref _secondsInput, Math.Clamp(value, 0, 59)))
+            if (SetProperty(ref _secondsInput, SanitizeInput(value, 59)))
                 OnInputDurationChanged();
         }
     }
+
+    /// <summary>Пустое поле ввода даёт NaN — приводим к безопасному значению.</summary>
+    private static double SanitizeInput(double value, double max) =>
+        double.IsNaN(value) || double.IsInfinity(value)
+            ? 0
+            : Math.Clamp(value, 0, max);
 
     /// <summary>Длительность, собранная из полей ввода.</summary>
     public TimeSpan InputDuration => new(
@@ -376,6 +382,14 @@ public sealed class TimerViewModel : ObservableObject
 
     private void ApplyDuration(TimeSpan duration)
     {
+        // Таймер умеет максимум 23:59:59 — длинные пресеты честно обрезаем,
+        // а не теряем сутки через duration.Hours.
+        var maxDuration = new TimeSpan(23, 59, 59);
+        if (duration > maxDuration)
+            duration = maxDuration;
+        if (duration < TimeSpan.Zero)
+            duration = TimeSpan.Zero;
+
         // Поля ввода вызовут OnInputDurationChanged и обновят движок.
         HoursInput = duration.Hours;
         MinutesInput = duration.Minutes;
@@ -388,6 +402,8 @@ public sealed class TimerViewModel : ObservableObject
         _settings.LastMinutes = MinutesInput;
         _settings.LastSeconds = SecondsInput;
         _settingsService.Save(_settings);
+
+        (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
 
         if (CanEditInputs)
         {
