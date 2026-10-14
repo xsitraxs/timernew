@@ -13,12 +13,12 @@
         <Ellipse
             x:Name="TrackEllipse"
             Stroke="{ThemeResource ControlStrongStrokeColorDefaultBrush}"
-            StrokeThickness="12"
-            Opacity="0.35" />
+            StrokeThickness="10"
+            Opacity="0.22" />
         <!-- Дуга оставшегося времени: геометрия строится в коде по Progress -->
         <Path
             x:Name="ProgressPath"
-            StrokeThickness="12"
+            StrokeThickness="10"
             StrokeStartLineCap="Round"
             StrokeEndLineCap="Round" />
     </Grid>

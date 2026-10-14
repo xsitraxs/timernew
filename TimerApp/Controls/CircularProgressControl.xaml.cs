@@ -16,7 +16,7 @@ namespace TimerApp.Controls;
 /// </summary>
 public sealed partial class CircularProgressControl : UserControl
 {
-    private const double StrokeThickness = 12.0;
+    private const double StrokeThickness = 10.0;
 
     public CircularProgressControl()
     {
