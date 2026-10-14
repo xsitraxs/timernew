@@ -27,3 +27,9 @@ BundleArtifacts/
 # OS
 .DS_Store
 Thumbs.db
+
+# Однофайловый установщик (генерируется в CI)
+installer/payload.zip
+payload/
+package/
+TimerSetup.exe

@@ -33,6 +33,11 @@ jobs:
       - name: Установить MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Установить Go (для однофайлового установщика)
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+
       - name: Создать сертификат подписи пакета
         shell: pwsh
         run: |
@@ -72,16 +77,16 @@ jobs:
             /p:PackageCertificateThumbprint="$env:CERT_THUMBPRINT"
           if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой $LASTEXITCODE" }
 
-      - name: Подготовить папку для скачивания
+      - name: Собрать однофайловый установщик TimerSetup.exe
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path package | Out-Null
+          New-Item -ItemType Directory -Force -Path package, payload | Out-Null
 
           $packages = Get-ChildItem -Path TimerApp -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object {
               $_.Extension -in '.msix', '.msixbundle', '.appx', '.appxbundle' -and
-              $_.FullName -notmatch '\\package\\'
+              $_.FullName -notmatch '\\payload\\'
             }
           if (-not $packages) {
             Write-Host "Каталоги AppPackages в дереве сборки:"
@@ -89,13 +94,24 @@ jobs:
               ForEach-Object { Write-Host $_.FullName }
             throw "MSIX-пакет не найден при рекурсивном поиске по TimerApp"
           }
-          $packages | ForEach-Object { Write-Host "Найден пакет: $($_.FullName)" }
-          $packages | Copy-Item -Destination package -Force
+          $packages | ForEach-Object { Write-Host "Пакет: $($_.FullName)" }
+          $packages | Copy-Item -Destination payload -Force
 
-          Copy-Item "$env:CERT_CER" -Destination "package\TimerApp.cer" -Force
-          Copy-Item "install.ps1" -Destination package -Force
-          Copy-Item "Install.bat" -Destination package -Force
-          Copy-Item "INSTALL.md" -Destination package -Force
+          Copy-Item "$env:CERT_CER" -Destination "payload\TimerApp.cer" -Force
+          Copy-Item "install.ps1" -Destination payload -Force
+          Copy-Item "Install.bat" -Destination payload -Force
+          Copy-Item "INSTALL.md" -Destination payload -Force
+
+          # Всё содержимое кладём в один архив, который CI встраивает в EXE.
+          Compress-Archive -Path "payload\*" -DestinationPath "installer\payload.zip" -Force
+
+          Push-Location installer
+          try {
+            go build -trimpath -ldflags "-s -w" -o "..\package\TimerSetup.exe" .
+            if ($LASTEXITCODE -ne 0) { throw "Сборка TimerSetup.exe завершилась с ошибкой $LASTEXITCODE" }
+          } finally {
+            Pop-Location
+          }
 
           Get-ChildItem package | Format-Table Name, Length
 
@@ -113,9 +129,12 @@ jobs:
           name: "Таймер ${{ github.ref_name }}"
           body: |
             ## Установка (без Visual Studio)
-            1. Скачайте все файлы снизу в одну папку.
-            2. Запустите **Install.bat** от имени администратора — он сам установит сертификат и приложение.
+            1. Скачайте **один файл** — `TimerSetup.exe`.
+            2. Запустите его и разрешите права администратора (UAC).
             3. Найдите «Таймер» в меню «Пуск».
 
-            Подробно — в файле INSTALL.md.
+            Всё остальное (сертификат, среда выполнения, само приложение)
+            уже встроено внутрь TimerSetup.exe. Если Windows покажет
+            предупреждение SmartScreen — «Подробнее» → «Выполнить в любом случае»:
+            это нормально для программ не из Microsoft Store.
           files: package/*

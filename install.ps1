@@ -2,12 +2,16 @@
 # Запускается двойным щелчком по Install.bat (или вручную из PowerShell).
 # Сам запрашивает права администратора, ставит сертификат и MSIX-пакет.
 
+param([switch]$NoPause)
+
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 function Pause-And-Exit([int]$code) {
-    Write-Host ""
-    Read-Host "Нажмите Enter, чтобы закрыть окно"
+    if (-not $NoPause) {
+        Write-Host ""
+        Read-Host "Нажмите Enter, чтобы закрыть окно"
+    }
     exit $code
 }
 
