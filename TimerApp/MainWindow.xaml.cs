@@ -226,7 +226,7 @@ public sealed partial class MainWindow : Window
         {
             Header = "Минуты",
             Minimum = 0,
-            Maximum = 24 * 60,
+            Maximum = 23 * 60 + 59,
             Value = 10,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
         };
@@ -287,6 +287,8 @@ public sealed partial class MainWindow : Window
                 break;
 
             case VirtualKey.Enter:
+                if (e.OriginalSource is Button)
+                    return; // Enter нажмёт саму кнопку, старт не дублируем
                 if (ViewModel.IsIdle || ViewModel.IsFinished)
                 {
                     StopFinishedAnimation();

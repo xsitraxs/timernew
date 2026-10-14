@@ -410,12 +410,12 @@ public sealed class MainForm : Form
 
         progress.Report(new(75, "Ставлю пакет " + Path.GetFileName(package) + "...", null));
 
-        PowerShellResult result;
+        string installCommand;
 
         if (string.IsNullOrWhiteSpace(targetDriveRoot))
         {
-            result = RunPowerShell(
-                $"Add-AppxPackage -Path '{EscapeSingleQuotes(package)}' -ForceApplicationShutdown");
+            installCommand =
+                $"Add-AppxPackage -Path '{EscapeSingleQuotes(package)}' -ForceApplicationShutdown";
         }
         else
         {
@@ -435,14 +435,40 @@ public sealed class MainForm : Form
 
             string volumeCommand =
                 "$drivePath = '" + drivePath + "'; " +
-                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null | Select-Object -First 1; " +
                 "if (-not $vol) { Add-AppxVolume -Path $drivePath | Out-Null; " +
-                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null }; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null | Select-Object -First 1 }; " +
                 "if (-not $vol) { throw 'Failed to prepare the selected drive for Windows apps.' }; " +
                 "Add-AppxPackage -Path '" + EscapeSingleQuotes(package) +
                 "' -Volume $vol -ForceApplicationShutdown";
 
-            result = RunPowerShell(volumeCommand);
+            installCommand = volumeCommand;
+        }
+
+        var result = RunPowerShell(installCommand);
+
+        // Обновление поверх старой версии может падать, потому что каждый
+        // релиз на GitHub подписывается новым сгенерированным сертификатом:
+        // Windows не даёт обновить пакет другим сертификатом. В этом случае
+        // честно удаляем старую версию и ставим начисто (настройки приложения
+        // при этом, к сожалению, сбросятся — другого способа обновиться нет).
+        if (result.ExitCode != 0)
+        {
+            var existing = RunPowerShell("(Get-AppxPackage -Name 'TimerApp').PackageFamilyName");
+
+            if (existing.ExitCode == 0 && !string.IsNullOrWhiteSpace(existing.StandardOutput))
+            {
+                progress.Report(new(80,
+                    "Обнаружена старая версия — переустанавливаю начисто...",
+                    "Старая версия подписана другим сертификатом, обновить поверх нельзя. " +
+                    "Удаляю её и ставлю заново (настройки таймера при этом сбросятся)."));
+
+                RunPowerShell("Get-AppxPackage -Name 'TimerApp' | Remove-AppxPackage");
+                var retry = RunPowerShell(installCommand);
+
+                if (retry.ExitCode == 0)
+                    result = retry;
+            }
         }
 
         if (result.ExitCode != 0)

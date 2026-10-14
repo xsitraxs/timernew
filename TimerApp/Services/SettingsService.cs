@@ -52,12 +52,21 @@ public sealed class SettingsService
                 LastSeconds = GetDouble(values, LastSecondsKey, 0)
             };
 
-            string presetsJson = GetString(values, PresetsKey, string.Empty);
-            if (!string.IsNullOrWhiteSpace(presetsJson))
+            // Битый JSON пресетов не должен сбрасывать все остальные настройки:
+            // в худшем случае просто начнём со списка пресетов пустым.
+            try
             {
-                settings.CustomPresets =
-                    JsonSerializer.Deserialize<System.Collections.Generic.List<CustomPreset>>(
-                        presetsJson, JsonOptions) ?? new();
+                string presetsJson = GetString(values, PresetsKey, string.Empty);
+                if (!string.IsNullOrWhiteSpace(presetsJson))
+                {
+                    settings.CustomPresets =
+                        JsonSerializer.Deserialize<System.Collections.Generic.List<CustomPreset>>(
+                            presetsJson, JsonOptions) ?? new();
+                }
+            }
+            catch (JsonException)
+            {
+                settings.CustomPresets = new();
             }
 
             return settings;
