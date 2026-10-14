@@ -61,7 +61,6 @@
                         <Setter Target="RingControl.Height" Value="208" />
                         <Setter Target="TimeDisplayText.FontSize" Value="40" />
                         <Setter Target="ContentPanel.Padding" Value="16,4,16,16" />
-                        <Setter Target="HeaderSubtitle.Visibility" Value="Collapsed" />
                     </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="NormalState">
@@ -84,24 +83,23 @@
         </Grid.RowDefinitions>
 
         <!-- ===================== Заголовок окна / TitleBar ===================== -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Margin="16,0,150,0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Margin="16,0,156,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
                 <FontIcon Glyph="&#xE916;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
-                <StackPanel>
-                    <TextBlock Text="Таймер" FontSize="14" FontWeight="SemiBold" />
-                    <TextBlock
-                        x:Name="HeaderSubtitle"
-                        Text="Точный отсчёт по времени окончания"
-                        FontSize="11"
-                        Opacity="0.65" />
-                </StackPanel>
+                <TextBlock Text="Таймер" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
 
             <StackPanel
+                Grid.Column="2"
                 Orientation="Horizontal"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
-                Spacing="4">
+                Spacing="6">
                 <Button
                     x:Name="CompactButton"
                     Style="{StaticResource TitleBarButtonStyle}"

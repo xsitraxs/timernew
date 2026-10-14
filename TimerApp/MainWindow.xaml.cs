@@ -78,8 +78,8 @@ public sealed partial class MainWindow : Window
 
         // Размер по умолчанию и центрирование на экране.
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        int width = 480;
-        int height = 780;
+        int width = 600;
+        int height = 840;
         int x = area.WorkArea.X + (area.WorkArea.Width - width) / 2;
         int y = area.WorkArea.Y + Math.Max(0, (area.WorkArea.Height - height) / 2);
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
@@ -113,12 +113,12 @@ public sealed partial class MainWindow : Window
 
         if (_isCompact)
         {
-            AppWindow.Resize(new SizeInt32(360, 600));
+            AppWindow.Resize(new SizeInt32(420, 640));
             ToolTipService.SetToolTip(CompactButton, "Обычный размер окна");
         }
         else
         {
-            AppWindow.Resize(new SizeInt32(480, 780));
+            AppWindow.Resize(new SizeInt32(600, 840));
             ToolTipService.SetToolTip(CompactButton, "Компактный размер окна");
         }
     }
