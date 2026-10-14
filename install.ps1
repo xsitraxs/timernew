@@ -44,13 +44,31 @@ try {
     }
 
     # --- 2. Пакет приложения ---
+    # Сначала ставим среду выполнения Windows App Runtime, если она лежит рядом
+    # (без неё MSIX может не установиться на "чистой" Windows).
+    $dependencies = Get-ChildItem -Path $PSScriptRoot -File |
+        Where-Object { $_.Name -like 'Microsoft.WindowsAppRuntime*.msix' }
+    foreach ($dependency in $dependencies) {
+        try {
+            Write-Host "     Устанавливаю среду выполнения $($dependency.Name)..."
+            Add-AppxPackage -Path $dependency.FullName -ErrorAction Stop
+        } catch {
+            Write-Host "     Среда выполнения уже установлена или не требуется." -ForegroundColor DarkGray
+        }
+    }
+
+    # Главный пакет ищем СТРОГО по имени TimerApp*, иначе можно случайно
+    # поставить файл среды выполнения вместо самого приложения.
     $package = Get-ChildItem -Path $PSScriptRoot -File |
-        Where-Object { $_.Extension -in '.msixbundle', '.msix', '.appxbundle', '.appx' } |
-        Sort-Object Length -Descending |
+        Where-Object {
+            $_.Name -like 'TimerApp*' -and
+            $_.Extension -in '.msixbundle', '.msix', '.appxbundle', '.appx'
+        } |
+        Sort-Object @{ Expression = { if ($_.Extension -in '.msixbundle', '.appxbundle') { 0 } else { 1 } } }, Length -Descending |
         Select-Object -First 1
 
     if (-not $package) {
-        throw "Пакет приложения (.msix) не найден рядом со скриптом. Скачайте все файлы установщика в одну папку."
+        throw "Пакет приложения TimerApp (.msix) не найден рядом со скриптом. Скачайте все файлы установщика в одну папку."
     }
 
     Write-Host "2/3. Устанавливаю пакет $($package.Name)..."
