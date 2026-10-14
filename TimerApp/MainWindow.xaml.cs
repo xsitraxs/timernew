@@ -75,11 +75,6 @@ public sealed partial class MainWindow : Window
         AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
         AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
 
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = 340;
-            presenter.PreferredMinimumHeight = 560;
-        }
 
         // Размер по умолчанию и центрирование на экране.
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
@@ -214,7 +209,7 @@ public sealed partial class MainWindow : Window
         _customPresetClickSuppressed = true;
         ViewModel.DeleteCustomPresetCommand.Execute(preset);
         DispatcherQueue.TryEnqueue(
-            DispatcherQueuePriority.Low,
+            Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
             () => _customPresetClickSuppressed = false);
     }
 

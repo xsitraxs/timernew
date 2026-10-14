@@ -26,8 +26,7 @@ public sealed class SoundService : IDisposable
     {
         _player = new MediaPlayer
         {
-            AutoPlay = false,
-            AudioCategory = MediaPlaybackAudioCategory.SoundEffects
+            AutoPlay = false
         };
 
         _player.Source = MediaSource.CreateFromUri(
