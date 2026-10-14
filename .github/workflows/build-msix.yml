@@ -33,25 +33,48 @@ jobs:
       - name: Установить MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Создать сертификат подписи пакета
+      - name: Подготовить сертификат подписи пакета
         shell: pwsh
+        env:
+          TIMERAPP_CERT_PFX_BASE64: ${{ secrets.TIMERAPP_CERT_PFX_BASE64 }}
+          TIMERAPP_CERT_PASSWORD: ${{ secrets.TIMERAPP_CERT_PASSWORD }}
         run: |
           $ErrorActionPreference = 'Stop'
-          # CN должен совпадать с Publisher в Package.appxmanifest
-          $cert = New-SelfSignedCertificate `
-            -Type Custom `
-            -Subject "CN=TimerAppDev" `
-            -KeyUsage DigitalSignature `
-            -FriendlyName "TimerApp Certificate" `
-            -CertStoreLocation "Cert:\CurrentUser\My" `
-            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
-          $password = ConvertTo-SecureString -String "TimerApp123!" -Force -AsPlainText
-          Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.pfx" -Password $password | Out-Null
+
+          if (-not [string]::IsNullOrWhiteSpace($env:TIMERAPP_CERT_PFX_BASE64)) {
+            # Постоянный сертификат владельца из GitHub Secrets:
+            # все релизы подписаны одинаково, обновления ставятся поверх
+            # с сохранением настроек и пресетов пользователя.
+            Write-Host "Используется постоянный сертификат подписи из Secrets."
+            $pfxPath = "$env:RUNNER_TEMP\TimerApp.pfx"
+            [IO.File]::WriteAllBytes(
+              $pfxPath,
+              [Convert]::FromBase64String($env:TIMERAPP_CERT_PFX_BASE64))
+            $password = ConvertTo-SecureString -String $env:TIMERAPP_CERT_PASSWORD -Force -AsPlainText
+            $cert = Import-PfxCertificate `
+              -FilePath $pfxPath `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -Password $password
+          } else {
+            # Секретов нет (например, форк или первый запуск): одноразовый
+            # сертификат, как раньше. Обновления между такими сборками
+            # поверх не встанут — нужен постоянный сертификат, см. SIGNING.md.
+            Write-Host "Secrets не заданы: создаётся одноразовый сертификат."
+            $cert = New-SelfSignedCertificate `
+              -Type Custom `
+              -Subject "CN=TimerAppDev" `
+              -KeyUsage DigitalSignature `
+              -FriendlyName "TimerApp Certificate" `
+              -CertStoreLocation "Cert:\CurrentUser\My" `
+              -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+            $password = ConvertTo-SecureString -String "TimerApp123!" -Force -AsPlainText
+            Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.pfx" -Password $password | Out-Null
+          }
+
           Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.cer" | Out-Null
-          "CERT_PFX=$env:RUNNER_TEMP\TimerApp.pfx" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CERT_CER=$env:RUNNER_TEMP\TimerApp.cer" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "Сертификат создан: $($cert.Thumbprint)"
+          "CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Сертификат подписи: $($cert.Thumbprint)"
 
       - name: Восстановить пакеты NuGet
         shell: pwsh
