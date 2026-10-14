@@ -1,0 +1,109 @@
+name: Собрать установщик для Windows (MSIX)
+
+# Готовый установщик собирается на Windows-сервере GitHub.
+# Обычному пользователю Visual Studio не нужна: он скачивает архив
+# из раздела Actions (или Releases) — см. INSTALL.md.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Сборка MSIX (x64)
+    runs-on: windows-2022
+
+    steps:
+      - name: Скачать исходный код
+        uses: actions/checkout@v4
+
+      - name: Установить .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Установить MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Создать сертификат подписи пакета
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # CN должен совпадать с Publisher в Package.appxmanifest
+          $cert = New-SelfSignedCertificate `
+            -Type Custom `
+            -Subject "CN=TimerAppDev" `
+            -KeyUsage DigitalSignature `
+            -FriendlyName "TimerApp Certificate" `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}")
+          $password = ConvertTo-SecureString -String "TimerApp123!" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.pfx" -Password $password | Out-Null
+          Export-Certificate -Cert $cert -FilePath "$env:RUNNER_TEMP\TimerApp.cer" | Out-Null
+          "CERT_PFX=$env:RUNNER_TEMP\TimerApp.pfx" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CERT_CER=$env:RUNNER_TEMP\TimerApp.cer" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "Сертификат создан: $($cert.Thumbprint)"
+
+      - name: Восстановить пакеты NuGet
+        shell: pwsh
+        run: msbuild TimerApp.sln /t:Restore /p:Configuration=Release /p:Platform=x64
+
+      - name: Собрать MSIX-пакет
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          msbuild TimerApp\TimerApp.csproj `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:GenerateAppxPackageOnBuild=true `
+            /p:UapAppxPackageBuildMode=SideloadOnly `
+            /p:AppxBundle=Always `
+            /p:AppxBundlePlatforms="x64" `
+            /p:AppxPackageSigningEnabled=true `
+            /p:PackageCertificateKeyFile="$env:CERT_PFX" `
+            /p:PackageCertificatePassword="TimerApp123!"
+          if ($LASTEXITCODE -ne 0) { throw "Сборка завершилась с ошибкой $LASTEXITCODE" }
+
+      - name: Подготовить папку для скачивания
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+
+          $packages = Get-ChildItem -Path TimerApp\AppPackages -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.msix', '.msixbundle', '.appx', '.appxbundle' }
+          if (-not $packages) { throw "MSIX-пакет не найден в TimerApp\AppPackages" }
+          $packages | Copy-Item -Destination package -Force
+
+          Copy-Item "$env:CERT_CER" -Destination "package\TimerApp.cer" -Force
+          Copy-Item "install.ps1" -Destination package -Force
+          Copy-Item "Install.bat" -Destination package -Force
+          Copy-Item "INSTALL.md" -Destination package -Force
+
+          Get-ChildItem package | Format-Table Name, Length
+
+      - name: Загрузить готовый установщик (артефакт)
+        uses: actions/upload-artifact@v4
+        with:
+          name: TimerApp-Windows-x64
+          path: package/*
+          if-no-files-found: error
+
+      - name: Опубликовать в Releases (только для тегов v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Таймер ${{ github.ref_name }}"
+          body: |
+            ## Установка (без Visual Studio)
+            1. Скачайте все файлы снизу в одну папку.
+            2. Запустите **Install.bat** от имени администратора — он сам установит сертификат и приложение.
+            3. Найдите «Таймер» в меню «Пуск».
+
+            Подробно — в файле INSTALL.md.
+          files: package/*
