@@ -78,9 +78,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path package | Out-Null
 
-          $packages = Get-ChildItem -Path TimerApp\AppPackages -Recurse -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in '.msix', '.msixbundle', '.appx', '.appxbundle' }
-          if (-not $packages) { throw "MSIX-пакет не найден в TimerApp\AppPackages" }
+          $packages = Get-ChildItem -Path TimerApp -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+              $_.Extension -in '.msix', '.msixbundle', '.appx', '.appxbundle' -and
+              $_.FullName -notmatch '\\package\\'
+            }
+          if (-not $packages) {
+            Write-Host "Каталоги AppPackages в дереве сборки:"
+            Get-ChildItem -Path TimerApp -Recurse -Directory -Filter AppPackages -ErrorAction SilentlyContinue |
+              ForEach-Object { Write-Host $_.FullName }
+            throw "MSIX-пакет не найден при рекурсивном поиске по TimerApp"
+          }
+          $packages | ForEach-Object { Write-Host "Найден пакет: $($_.FullName)" }
           $packages | Copy-Item -Destination package -Force
 
           Copy-Item "$env:CERT_CER" -Destination "package\TimerApp.cer" -Force
