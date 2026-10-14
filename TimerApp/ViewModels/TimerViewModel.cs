@@ -30,6 +30,7 @@ public sealed class TimerViewModel : ObservableObject
     private TimerState _state = TimerState.Idle;
     private double _volumePercent = 70;
     private bool _isMuted;
+    private string _soundId = "alarm";
     private bool _isDarkTheme = true;
 
     public TimerViewModel(
@@ -48,6 +49,7 @@ public sealed class TimerViewModel : ObservableObject
         _secondsInput = Math.Clamp(settings.LastSeconds, 0, 59);
         _volumePercent = Math.Clamp(settings.Volume, 0, 1) * 100;
         _isMuted = settings.IsMuted;
+        _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
 
         foreach (var preset in settings.CustomPresets)
@@ -56,6 +58,7 @@ public sealed class TimerViewModel : ObservableObject
         _remaining = InputDuration;
         _timer.SetDuration(InputDuration);
         _sound.ApplyVolume(_volumePercent / 100.0, _isMuted);
+        _sound.SetSound(_soundId, _settingsService.GetCustomSoundFilePath(settings));
 
         _timer.Ticked += OnTimerTicked;
         _timer.StateChanged += OnTimerStateChanged;
@@ -258,6 +261,41 @@ public sealed class TimerViewModel : ObservableObject
     }
 
     // ------------------------------------------------------------------ тема
+
+    /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
+    public string SoundId
+    {
+        get => _soundId;
+        set
+        {
+            if (SetProperty(ref _soundId, value))
+            {
+                _settings.SoundId = value;
+                _sound.SetSound(value, _settingsService.GetCustomSoundFilePath(_settings));
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>Выбран ли пользовательский файл звука.</summary>
+    public bool HasCustomSound => !string.IsNullOrWhiteSpace(_settings.CustomSoundFileName);
+
+    /// <summary>Регистрирует скопированный пользовательский файл как текущую мелодию.</summary>
+    public void SetCustomSoundFile(string fileName)
+    {
+        _settings.CustomSoundFileName = fileName;
+        OnPropertyChanged(nameof(HasCustomSound));
+
+        if (string.Equals(_soundId, "custom", StringComparison.OrdinalIgnoreCase))
+        {
+            _sound.SetSound("custom", _settingsService.GetCustomSoundFilePath(_settings));
+            _settingsService.Save(_settings);
+        }
+        else
+        {
+            SoundId = "custom";
+        }
+    }
 
     /// <summary>Обратное к IsMuted — для IsEnabled кнопки проверки звука.</summary>
     public bool IsNotMuted => !IsMuted;

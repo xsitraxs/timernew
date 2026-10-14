@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
@@ -13,6 +14,8 @@ using TimerApp.Models;
 using TimerApp.Services;
 using TimerApp.ViewModels;
 using Windows.Graphics;
+using Windows.Storage;
+using Windows.Storage.Pickers;
 using Windows.System;
 
 namespace TimerApp;
@@ -30,6 +33,7 @@ public sealed partial class MainWindow : Window
     private bool _isCompact;
     private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
+    private bool _syncingSoundSelection;
 
     public MainWindow()
     {
@@ -48,6 +52,7 @@ public sealed partial class MainWindow : Window
 
         ConfigureWindow();
         ApplyTheme(ViewModel.IsDarkTheme);
+        SyncSoundComboBoxSelection(ViewModel.SoundId);
 
         RootGrid.Loaded += (_, _) => RootGrid.Focus(FocusState.Programmatic);
         Closed += OnClosed;
@@ -197,6 +202,100 @@ public sealed partial class MainWindow : Window
             storyboard.Stop();
 
         TimeDisplayText.Opacity = 1.0;
+    }
+
+    // ------------------------------------------------------------ выбор звука
+
+    private void SyncSoundComboBoxSelection(string soundId)
+    {
+        _syncingSoundSelection = true;
+        try
+        {
+            foreach (var obj in SoundComboBox.Items)
+            {
+                if (obj is ComboBoxItem item &&
+                    string.Equals(item.Tag as string, soundId, StringComparison.OrdinalIgnoreCase))
+                {
+                    SoundComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _syncingSoundSelection = false;
+        }
+    }
+
+    private async void SoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSoundSelection)
+            return;
+
+        if (SoundComboBox.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not string soundId)
+        {
+            return;
+        }
+
+        if (string.Equals(soundId, "custom", StringComparison.OrdinalIgnoreCase) &&
+            !ViewModel.HasCustomSound)
+        {
+            // Своего файла ещё нет — сразу открываем выбор файла.
+            await PickCustomSoundAsync();
+            return;
+        }
+
+        ViewModel.SoundId = soundId;
+    }
+
+    private async void SelectCustomSoundButton_Click(object sender, RoutedEventArgs e)
+    {
+        await PickCustomSoundAsync();
+    }
+
+    private async System.Threading.Tasks.Task PickCustomSoundAsync()
+    {
+        var picker = new FileOpenPicker
+        {
+            ViewMode = PickerViewMode.Thumbnail,
+            SuggestedStartLocation = PickerLocationId.MusicLibrary
+        };
+        picker.FileTypeFilter.Add(".wav");
+        picker.FileTypeFilter.Add(".mp3");
+        picker.FileTypeFilter.Add(".m4a");
+        picker.FileTypeFilter.Add(".flac");
+
+        // Для настольного WinUI-приложения пикеру нужен HWND окна.
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+        StorageFile? file = await picker.PickSingleFileAsync();
+        if (file is null)
+        {
+            SyncSoundComboBoxSelection(ViewModel.SoundId);
+            return;
+        }
+
+        string targetName = "custom-sound" + file.FileType;
+        string folderPath = _settingsService.GetCustomSoundFolderPath();
+
+        try
+        {
+            var folder = await StorageFolder.GetFolderFromPathAsync(folderPath);
+            await file.CopyAsync(folder, targetName, NameCollisionOption.ReplaceExisting);
+        }
+        catch (Exception)
+        {
+            // Резервный путь обычным копированием файла.
+            if (!string.IsNullOrWhiteSpace(file.Path))
+                File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
+            else
+                throw;
+        }
+
+        ViewModel.SetCustomSoundFile(targetName);
+        SyncSoundComboBoxSelection("custom");
     }
 
     // ------------------------------------------------------------ свои пресеты

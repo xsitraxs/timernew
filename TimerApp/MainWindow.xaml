@@ -441,6 +441,31 @@
                                 IsEnabled="{Binding IsNotMuted}"
                                 Command="{Binding PreviewSoundCommand}" />
                         </Grid>
+                        <Grid ColumnSpacing="10" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="SoundComboBox"
+                                Grid.Column="0"
+                                Header="Мелодия"
+                                HorizontalAlignment="Stretch"
+                                SelectionChanged="SoundComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Классическая — две ноты" Tag="alarm" />
+                                <ComboBoxItem Content="Колокольчики" Tag="chime" />
+                                <ComboBoxItem Content="Цифровые бипы" Tag="beep" />
+                                <ComboBoxItem Content="Мягкая" Tag="gentle" />
+                                <ComboBoxItem Content="Свой файл" Tag="custom" />
+                            </ComboBox>
+                            <Button
+                                Grid.Column="1"
+                                Content="Свой файл..."
+                                CornerRadius="8"
+                                VerticalAlignment="Bottom"
+                                Click="SelectCustomSoundButton_Click"
+                                ToolTipService.ToolTip="Выбрать свой звуковой файл (wav, mp3, m4a)" />
+                        </Grid>
                         <TextBlock
                             Text="По окончании: звуковой сигнал и уведомление Windows — даже если окно свёрнуто."
                             FontSize="12"

@@ -37,6 +37,54 @@ public sealed class SoundService : IDisposable
         _player.MediaEnded += OnMediaEnded;
     }
 
+    /// <summary>
+    /// Выбирает мелодию: встроенную (alarm/chime/beep/gentle по id)
+    /// или пользовательский файл (id "custom" + путь к копии файла).
+    /// </summary>
+    public void SetSound(string? soundId, string? customFilePath)
+    {
+        StopAlarm();
+
+        try
+        {
+            Uri uri;
+
+            if (string.Equals(soundId, "custom", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(customFilePath) &&
+                System.IO.File.Exists(customFilePath))
+            {
+                uri = new Uri(customFilePath);
+            }
+            else
+            {
+                string file = soundId?.ToLowerInvariant() switch
+                {
+                    "chime" => "chime.wav",
+                    "beep" => "beep.wav",
+                    "gentle" => "gentle.wav",
+                    _ => "alarm.wav"
+                };
+                uri = new Uri("ms-appx:///Assets/" + file);
+            }
+
+            _player.Source = MediaSource.CreateFromUri(uri);
+        }
+        catch (Exception)
+        {
+            // Битый пользовательский файл не должен оставлять без звука:
+            // откатываемся на встроенный сигнал.
+            try
+            {
+                _player.Source = MediaSource.CreateFromUri(
+                    new Uri("ms-appx:///Assets/alarm.wav"));
+            }
+            catch (Exception)
+            {
+                // Плеер уже освобождён.
+            }
+        }
+    }
+
     /// <summary>Применяет громкость (0..1) и состояние mute.</summary>
     public void ApplyVolume(double volume01, bool isMuted)
     {

@@ -21,6 +21,8 @@ public sealed class SettingsService
     private const string ThemeKey = "Theme";
     private const string VolumeKey = "Volume";
     private const string IsMutedKey = "IsMuted";
+    private const string SoundIdKey = "SoundId";
+    private const string CustomSoundKey = "CustomSoundFileName";
     private const string LastHoursKey = "LastHours";
     private const string LastMinutesKey = "LastMinutes";
     private const string LastSecondsKey = "LastSeconds";
@@ -51,6 +53,8 @@ public sealed class SettingsService
                 Theme = GetString(values, ThemeKey, "Dark"),
                 Volume = GetDouble(values, VolumeKey, 0.7),
                 IsMuted = GetBool(values, IsMutedKey, false),
+                SoundId = GetString(values, SoundIdKey, "alarm"),
+                CustomSoundFileName = GetString(values, CustomSoundKey, string.Empty),
                 LastHours = GetDouble(values, LastHoursKey, 0),
                 LastMinutes = GetDouble(values, LastMinutesKey, 5),
                 LastSeconds = GetDouble(values, LastSecondsKey, 0),
@@ -98,6 +102,8 @@ public sealed class SettingsService
                 values[ThemeKey] = settings.Theme;
                 values[VolumeKey] = settings.Volume;
                 values[IsMutedKey] = settings.IsMuted;
+                values[SoundIdKey] = settings.SoundId;
+                values[CustomSoundKey] = settings.CustomSoundFileName;
                 values[LastHoursKey] = settings.LastHours;
                 values[LastMinutesKey] = settings.LastMinutes;
                 values[LastSecondsKey] = settings.LastSeconds;
@@ -115,6 +121,33 @@ public sealed class SettingsService
         }
 
         SaveToFile(settings);
+    }
+
+    /// <summary>Папка для пользовательского файла звука (копия выбранного файла).</summary>
+    public string GetCustomSoundFolderPath()
+    {
+        try
+        {
+            string path = ApplicationData.Current.LocalFolder.Path;
+            Directory.CreateDirectory(path);
+            return path;
+        }
+        catch (Exception)
+        {
+            string path = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "TimerApp");
+            Directory.CreateDirectory(path);
+            return path;
+        }
+    }
+
+    /// <summary>Полный путь к пользовательскому звуку или null, если не выбран.</summary>
+    public string? GetCustomSoundFilePath(AppSettings settings)
+    {
+        return string.IsNullOrWhiteSpace(settings.CustomSoundFileName)
+            ? null
+            : Path.Combine(GetCustomSoundFolderPath(), settings.CustomSoundFileName);
     }
 
     private static string GetString(IPropertySet values, string key, string fallback) =>

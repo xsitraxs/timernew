@@ -14,6 +14,12 @@ public sealed class AppSettings
     /// <summary>Звук отключён кнопкой mute.</summary>
     public bool IsMuted { get; set; }
 
+    /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
+    public string SoundId { get; set; } = "alarm";
+
+    /// <summary>Имя скопированного пользовательского файла звука в LocalFolder.</summary>
+    public string CustomSoundFileName { get; set; } = string.Empty;
+
     /// <summary>Последняя введённая длительность — часы.</summary>
     public double LastHours { get; set; }
 
