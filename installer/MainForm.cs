@@ -422,8 +422,12 @@ public sealed class MainForm : Form
             // MSIX нельзя поставить в произвольную папку, но можно выбрать диск:
             // Windows положит приложение в "<диск>:\\Program Files\\WindowsApps".
             // Если диск ещё не подготовлен как AppxVolume — подготавливаем.
+            // ВАЖНО: командлеты Get/Add-AppxVolume хотят путь БЕЗ обратной
+            // косой черты в конце ("D:", а не "D:\") — иначе Add-AppxVolume
+            // падает с «В параметрах не должно быть обратной косой черты
+            // в конце», а Get-AppxVolume не находит том (0x80070490).
             string drivePath = EscapeSingleQuotes(
-                targetDriveRoot.TrimEnd('\\') + "\\");
+                targetDriveRoot.TrimEnd('\\'));
 
             progress.Report(new(78,
                 "Ставлю приложение на диск " + targetDriveRoot + "...",
@@ -431,9 +435,9 @@ public sealed class MainForm : Form
 
             string volumeCommand =
                 "$drivePath = '" + drivePath + "'; " +
-                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null; " +
                 "if (-not $vol) { Add-AppxVolume -Path $drivePath | Out-Null; " +
-                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue }; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue 2>$null }; " +
                 "if (-not $vol) { throw 'Failed to prepare the selected drive for Windows apps.' }; " +
                 "Add-AppxPackage -Path '" + EscapeSingleQuotes(package) +
                 "' -Volume $vol -ForceApplicationShutdown";
