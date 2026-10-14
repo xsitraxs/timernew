@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TimerSetup</AssemblyName>
+    <RootNamespace>TimerSetup</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>TimerApp.ico</ApplicationIcon>
+    <Version>1.0.3</Version>
+    <!-- payload.zip генерирует GitHub Actions перед публикацией (см. workflow).
+         Локальная сборка без payload возможна: установщик покажет понятную ошибку. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="payload.zip" LogicalName="TimerSetup.payload.zip" Condition="Exists('payload.zip')" />
+  </ItemGroup>
+
+</Project>

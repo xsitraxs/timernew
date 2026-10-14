@@ -33,11 +33,6 @@ jobs:
       - name: Установить MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Установить Go (для однофайлового установщика)
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.x"
-
       - name: Создать сертификат подписи пакета
         shell: pwsh
         run: |
@@ -105,13 +100,15 @@ jobs:
           # Всё содержимое кладём в один архив, который CI встраивает в EXE.
           Compress-Archive -Path "payload\*" -DestinationPath "installer\payload.zip" -Force
 
-          Push-Location installer
-          try {
-            go build -trimpath -ldflags "-s -w" -o "..\package\TimerSetup.exe" .
-            if ($LASTEXITCODE -ne 0) { throw "Сборка TimerSetup.exe завершилась с ошибкой $LASTEXITCODE" }
-          } finally {
-            Pop-Location
-          }
+          # Графический установщик на C# WinForms: один самодостаточный EXE,
+          # внутрь которого встроен только что созданный payload.zip.
+          dotnet publish installer\TimerSetup.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o package
+          if ($LASTEXITCODE -ne 0) { throw "Сборка TimerSetup.exe завершилась с ошибкой $LASTEXITCODE" }
+          Remove-Item package\*.pdb -ErrorAction SilentlyContinue
 
           Get-ChildItem package | Format-Table Name, Length
 
