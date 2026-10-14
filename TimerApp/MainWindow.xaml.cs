@@ -28,6 +28,7 @@ public sealed partial class MainWindow : Window
     private readonly TimerService _timerService;
     private readonly SoundService _soundService;
     private bool _isCompact;
+    private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
 
     public MainWindow()
@@ -109,17 +110,42 @@ public sealed partial class MainWindow : Window
 
     private void CompactButton_Click(object sender, RoutedEventArgs e)
     {
-        _isCompact = !_isCompact;
+        SetMiniMode(!_isCompact);
+    }
 
-        if (_isCompact)
+    /// <summary>
+    /// Мини-режим: маленькое окно поверх всех окон. Остаются только кольцо,
+    /// цифры, статус и кнопки управления — секции настроек прячутся.
+    /// Повторное нажатие возвращает прежний размер и обычную компоновку.
+    /// </summary>
+    private void SetMiniMode(bool mini)
+    {
+        _isCompact = mini;
+
+        var sectionVisibility = mini ? Visibility.Collapsed : Visibility.Visible;
+        InputSection.Visibility = sectionVisibility;
+        PresetsSection.Visibility = sectionVisibility;
+        SoundSection.Visibility = sectionVisibility;
+        HotkeysHint.Visibility = sectionVisibility;
+        MuteTitleButton.Visibility = sectionVisibility;
+        ThemeTitleButton.Visibility = sectionVisibility;
+
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+            presenter.IsAlwaysOnTop = mini;
+
+        if (mini)
         {
-            AppWindow.Resize(new SizeInt32(420, 640));
-            ToolTipService.SetToolTip(CompactButton, "Обычный размер окна");
+            _sizeBeforeMini = AppWindow.Size;
+            AppWindow.Resize(new SizeInt32(400, 460));
+            ToolTipService.SetToolTip(CompactButton, "Обычный режим окна");
         }
         else
         {
-            AppWindow.Resize(new SizeInt32(600, 840));
-            ToolTipService.SetToolTip(CompactButton, "Компактный размер окна");
+            var restore = _sizeBeforeMini.Width >= 480 && _sizeBeforeMini.Height >= 600
+                ? _sizeBeforeMini
+                : new SizeInt32(600, 840);
+            AppWindow.Resize(restore);
+            ToolTipService.SetToolTip(CompactButton, "Мини-окно поверх всех окон");
         }
     }
 

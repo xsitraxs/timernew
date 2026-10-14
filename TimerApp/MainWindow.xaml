@@ -105,10 +105,11 @@
                     Style="{StaticResource TitleBarButtonStyle}"
                     Click="CompactButton_Click"
                     AutomationProperties.Name="Компактный размер окна"
-                    ToolTipService.ToolTip="Компактный размер окна">
+                    ToolTipService.ToolTip="Мини-окно поверх всех окон">
                     <FontIcon Glyph="&#xE740;" FontSize="14" />
                 </Button>
                 <Button
+                    x:Name="MuteTitleButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Command="{Binding ToggleMuteCommand}"
                     ToolTipService.ToolTip="Отключить / включить звук">
@@ -122,6 +123,7 @@
                     </Grid>
                 </Button>
                 <Button
+                    x:Name="ThemeTitleButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Click="ToggleThemeButton_Click"
                     ToolTipService.ToolTip="Светлая / тёмная тема">
@@ -260,7 +262,7 @@
                 </StackPanel>
 
                 <!-- Ввод длительности -->
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border x:Name="InputSection" Style="{StaticResource CardBorderStyle}">
                     <StackPanel Spacing="10">
                         <TextBlock Text="Длительность" FontWeight="SemiBold" FontSize="14" />
                         <Grid ColumnSpacing="10">
@@ -303,7 +305,7 @@
                 </Border>
 
                 <!-- Пресеты -->
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border x:Name="PresetsSection" Style="{StaticResource CardBorderStyle}">
                     <StackPanel Spacing="12">
                         <TextBlock Text="Пресеты" FontWeight="SemiBold" FontSize="14" />
 
@@ -391,6 +393,7 @@
 
                 <!-- Звук: в минималистичной компоновке это сворачиваемые настройки -->
                 <Expander
+                    x:Name="SoundSection"
                     Header="Звук и уведомления"
                     IsExpanded="False"
                     HorizontalAlignment="Stretch"
@@ -447,6 +450,7 @@
                 </Expander>
 
                 <TextBlock
+                    x:Name="HotkeysHint"
                     Text="Горячие клавиши:  Пробел — старт / пауза / продолжить  •  Esc — сброс  •  Enter — старт"
                     FontSize="12"
                     Opacity="0.55"

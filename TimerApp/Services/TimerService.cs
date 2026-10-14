@@ -140,6 +140,43 @@ public sealed class TimerService : IDisposable
         Ticked?.Invoke(this, EventArgs.Empty);
     }
 
+    /// <summary>
+    /// Восстанавливает идущий отсчёт после перезапуска приложения:
+    /// дедлайн берётся из сохранённой сессии, остаток пересчитывается от UtcNow.
+    /// Если дедлайн уже прошёл — таймер честно становится Finished
+    /// (без звукового сигнала: событие Completed при восстановлении не стреляет).
+    /// </summary>
+    public void RestoreRunning(TimeSpan duration, DateTimeOffset endUtc)
+    {
+        Duration = duration < TimeSpan.Zero ? TimeSpan.Zero : duration;
+        EndTimeUtc = endUtc;
+        Remaining = GetLiveRemaining();
+
+        if (Remaining <= TimeSpan.Zero)
+        {
+            Remaining = TimeSpan.Zero;
+            SetState(TimerState.Finished);
+        }
+        else
+        {
+            SetState(TimerState.Running);
+            _timer.Start();
+        }
+
+        Ticked?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Восстанавливает таймер, стоявший на паузе до закрытия приложения.</summary>
+    public void RestorePaused(TimeSpan duration, TimeSpan remaining)
+    {
+        Duration = duration < TimeSpan.Zero ? TimeSpan.Zero : duration;
+        Remaining = remaining < TimeSpan.Zero
+            ? TimeSpan.Zero
+            : (remaining > Duration ? Duration : remaining);
+        SetState(TimerState.Paused);
+        Ticked?.Invoke(this, EventArgs.Empty);
+    }
+
     /// <summary>Сбрасывает таймер к заданной длительности.</summary>
     public void Reset()
     {

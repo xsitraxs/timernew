@@ -74,6 +74,7 @@ public sealed class TimerViewModel : ObservableObject
         PreviewSoundCommand = new RelayCommand(() => _sound.PlayPreview());
 
         RefreshStateProperties();
+        RestoreSavedSession();
     }
 
     /// <summary>Таймер дошёл до нуля: окно показывает уведомление и мигание.</summary>
@@ -338,14 +339,20 @@ public sealed class TimerViewModel : ObservableObject
 
         _sound.StopAlarm();
         _timer.Start(duration);
+        PersistTimerSession();
     }
 
-    private void Pause() => _timer.Pause();
+    private void Pause()
+    {
+        _timer.Pause();
+        PersistTimerSession();
+    }
 
     private void Resume()
     {
         _sound.StopAlarm();
         _timer.Resume();
+        PersistTimerSession();
     }
 
     private void Reset()
@@ -355,6 +362,7 @@ public sealed class TimerViewModel : ObservableObject
         _timer.SetDuration(InputDuration);
         Remaining = InputDuration;
         Progress = 1.0;
+        PersistTimerSession();
     }
 
     /// <summary>Пробел: старт / пауза / продолжить в зависимости от состояния.</summary>
@@ -409,7 +417,11 @@ public sealed class TimerViewModel : ObservableObject
     }
 
     /// <summary>«+1 мин» во время отсчёта и паузы.</summary>
-    private void AddMinute() => _timer.AddTime(TimeSpan.FromMinutes(1));
+    private void AddMinute()
+    {
+        _timer.AddTime(TimeSpan.FromMinutes(1));
+        PersistTimerSession();
+    }
 
     private void ToggleMute() => IsMuted = !IsMuted;
 
@@ -470,8 +482,84 @@ public sealed class TimerViewModel : ObservableObject
     {
         Remaining = TimeSpan.Zero;
         Progress = 0;
+        PersistTimerSession();
         _sound.PlayAlarm();
         TimerFinished?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Сохраняет сессию отсчёта, чтобы приложение пережило закрытие,
+    /// падение и перезагрузку ПК. На финише и сбросе сессия очищается.
+    /// </summary>
+    private void PersistTimerSession()
+    {
+        switch (_timer.State)
+        {
+            case TimerState.Running:
+                _settings.SavedTimerState = "Running";
+                _settings.SavedTimerEndUtcTicks = _timer.EndTimeUtc.UtcTicks;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                break;
+
+            case TimerState.Paused:
+                _settings.SavedTimerState = "Paused";
+                _settings.SavedTimerEndUtcTicks = 0;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                break;
+
+            default:
+                _settings.SavedTimerState = string.Empty;
+                _settings.SavedTimerEndUtcTicks = 0;
+                _settings.SavedTimerDurationSeconds = 0;
+                _settings.SavedTimerRemainingSeconds = 0;
+                break;
+        }
+
+        _settingsService.Save(_settings);
+    }
+
+    /// <summary>Подхватывает сохранённый отсчёт при запуске приложения.</summary>
+    private void RestoreSavedSession()
+    {
+        try
+        {
+            var duration = TimeSpan.FromSeconds(_settings.SavedTimerDurationSeconds);
+            if (duration <= TimeSpan.Zero)
+                return;
+
+            if (string.Equals(_settings.SavedTimerState, "Running", StringComparison.OrdinalIgnoreCase) &&
+                _settings.SavedTimerEndUtcTicks > 0)
+            {
+                var endUtc = new DateTimeOffset(_settings.SavedTimerEndUtcTicks, TimeSpan.Zero);
+                _timer.RestoreRunning(duration, endUtc);
+                Remaining = _timer.Remaining;
+                Progress = _timer.State == TimerState.Finished
+                    ? 0
+                    : Math.Clamp(_timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+
+                // Дедлайн прошёл, пока приложения не было: показали Finished
+                // один раз и очистили сессию, чтобы не воскрешать её снова.
+                if (_timer.State == TimerState.Finished)
+                    PersistTimerSession();
+            }
+            else if (string.Equals(_settings.SavedTimerState, "Paused", StringComparison.OrdinalIgnoreCase))
+            {
+                _timer.RestorePaused(
+                    duration,
+                    TimeSpan.FromSeconds(_settings.SavedTimerRemainingSeconds));
+                Remaining = _timer.Remaining;
+                Progress = Math.Clamp(_timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+            }
+        }
+        catch (Exception)
+        {
+            // Повреждённая сохранённая сессия не должна мешать запуску:
+            // просто очищаем её и стартуем как обычно.
+            _settings.SavedTimerState = string.Empty;
+            _settingsService.Save(_settings);
+        }
     }
 
     private void RefreshStateProperties()

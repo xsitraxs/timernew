@@ -25,6 +25,10 @@ public sealed class SettingsService
     private const string LastMinutesKey = "LastMinutes";
     private const string LastSecondsKey = "LastSeconds";
     private const string PresetsKey = "CustomPresetsJson";
+    private const string SavedStateKey = "SavedTimerState";
+    private const string SavedEndKey = "SavedTimerEndUtcTicks";
+    private const string SavedDurationKey = "SavedTimerDurationSeconds";
+    private const string SavedRemainingKey = "SavedTimerRemainingSeconds";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -49,7 +53,11 @@ public sealed class SettingsService
                 IsMuted = GetBool(values, IsMutedKey, false),
                 LastHours = GetDouble(values, LastHoursKey, 0),
                 LastMinutes = GetDouble(values, LastMinutesKey, 5),
-                LastSeconds = GetDouble(values, LastSecondsKey, 0)
+                LastSeconds = GetDouble(values, LastSecondsKey, 0),
+                SavedTimerState = GetString(values, SavedStateKey, string.Empty),
+                SavedTimerEndUtcTicks = GetLong(values, SavedEndKey, 0),
+                SavedTimerDurationSeconds = GetDouble(values, SavedDurationKey, 0),
+                SavedTimerRemainingSeconds = GetDouble(values, SavedRemainingKey, 0)
             };
 
             // Битый JSON пресетов не должен сбрасывать все остальные настройки:
@@ -94,6 +102,10 @@ public sealed class SettingsService
                 values[LastMinutesKey] = settings.LastMinutes;
                 values[LastSecondsKey] = settings.LastSeconds;
                 values[PresetsKey] = JsonSerializer.Serialize(settings.CustomPresets, JsonOptions);
+                values[SavedStateKey] = settings.SavedTimerState;
+                values[SavedEndKey] = settings.SavedTimerEndUtcTicks;
+                values[SavedDurationKey] = settings.SavedTimerDurationSeconds;
+                values[SavedRemainingKey] = settings.SavedTimerRemainingSeconds;
                 return;
             }
             catch (Exception)
@@ -110,6 +122,9 @@ public sealed class SettingsService
 
     private static double GetDouble(IPropertySet values, string key, double fallback) =>
         values.TryGetValue(key, out object? raw) && raw is double d ? d : fallback;
+
+    private static long GetLong(IPropertySet values, string key, long fallback) =>
+        values.TryGetValue(key, out object? raw) && raw is long l ? l : fallback;
 
     private static bool GetBool(IPropertySet values, string key, bool fallback) =>
         values.TryGetValue(key, out object? raw) && raw is bool b ? b : fallback;
