@@ -22,6 +22,7 @@ public sealed class MainForm : Form
     private static readonly Color Gray = Color.FromArgb(160, 160, 160);
 
     private readonly Label _statusLabel;
+    private readonly ComboBox _volumeComboBox;
     private readonly ProgressBar _progressBar;
     private readonly TextBox _logBox;
     private readonly Button _installButton;
@@ -72,22 +73,40 @@ public sealed class MainForm : Form
         var descriptionLabel = new Label
         {
             Text = "Нажмите «Установить». Установщик сам поставит сертификат, " +
-                   "среду выполнения и приложение. Visual Studio не нужна.",
+                   "среду выполнения и приложение. Visual Studio не нужна. " +
+                   "Можно выбрать диск: точную папку Windows не разрешает — " +
+                   "приложения всегда ставятся в «<диск>:\\Program Files\\WindowsApps».",
             ForeColor = Gray,
-            Location = new Point(32, 118),
-            Size = new Size(496, 44)
+            Location = new Point(32, 112),
+            Size = new Size(496, 58)
         };
+
+        var volumeLabel = new Label
+        {
+            Text = "Куда установить:",
+            Location = new Point(32, 178),
+            Size = new Size(132, 26),
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+
+        _volumeComboBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(170, 178),
+            Size = new Size(358, 28)
+        };
+        PopulateVolumeComboBox();
 
         _statusLabel = new Label
         {
             Text = "Готово к установке.",
-            Location = new Point(32, 172),
+            Location = new Point(32, 216),
             Size = new Size(496, 24)
         };
 
         _progressBar = new ProgressBar
         {
-            Location = new Point(32, 202),
+            Location = new Point(32, 246),
             Size = new Size(496, 16),
             Minimum = 0,
             Maximum = 100,
@@ -96,8 +115,8 @@ public sealed class MainForm : Form
 
         _logBox = new TextBox
         {
-            Location = new Point(32, 232),
-            Size = new Size(496, 132),
+            Location = new Point(32, 276),
+            Size = new Size(496, 96),
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
@@ -144,6 +163,7 @@ public sealed class MainForm : Form
         Controls.AddRange(new Control[]
         {
             iconLabel, titleLabel, subtitleLabel, descriptionLabel,
+            volumeLabel, _volumeComboBox,
             _statusLabel, _progressBar, _logBox,
             _installButton, _launchButton, _closeButton
         });
@@ -160,6 +180,36 @@ public sealed class MainForm : Form
         };
     }
 
+    private void PopulateVolumeComboBox()
+    {
+        _volumeComboBox.Items.Add(new VolumeOption(
+            null, "По умолчанию — куда ставит Windows"));
+
+        foreach (var drive in DriveInfo.GetDrives()
+                     .Where(d => d.DriveType == DriveType.Fixed && d.IsReady)
+                     .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            double freeGb = drive.AvailableFreeSpace / 1024.0 / 1024.0 / 1024.0;
+            string display = $"{drive.Name} — свободно {freeGb:F0} ГБ";
+            _volumeComboBox.Items.Add(new VolumeOption(drive.RootDirectory.FullName, display));
+        }
+
+        _volumeComboBox.SelectedIndex = 0;
+    }
+
+    private sealed class VolumeOption
+    {
+        public VolumeOption(string? driveRoot, string display)
+        {
+            DriveRoot = driveRoot;
+            Display = display;
+        }
+
+        public string? DriveRoot { get; }
+        public string Display { get; }
+        public override string ToString() => Display;
+    }
+
     // ------------------------------------------------------------ установка
 
     private async void InstallButton_Click(object? sender, EventArgs e)
@@ -169,6 +219,16 @@ public sealed class MainForm : Form
 
         _installing = true;
         _installButton.Enabled = false;
+        _volumeComboBox.Enabled = false;
+
+        string? selectedDrive = (_volumeComboBox.SelectedItem as VolumeOption)?.DriveRoot;
+        string systemRoot = Path.GetPathRoot(Environment.SystemDirectory) ?? string.Empty;
+        if (selectedDrive is not null &&
+            string.Equals(selectedDrive, systemRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            // Системный диск = поведение по умолчанию, -Volume не нужен.
+            selectedDrive = null;
+        }
         _launchButton.Visible = false;
         _logBox.Clear();
 
@@ -176,7 +236,8 @@ public sealed class MainForm : Form
 
         try
         {
-            await Task.Run(() => InstallCore(progress));
+            string driveForInstall = selectedDrive ?? string.Empty;
+            await Task.Run(() => InstallCore(progress, driveForInstall));
 
             _installed = true;
             _progressBar.Value = 100;
@@ -202,11 +263,12 @@ public sealed class MainForm : Form
         {
             _installing = false;
             _installButton.Enabled = true;
+            _volumeComboBox.Enabled = true;
             _installButton.Text = _installed ? "Установить заново" : "Повторить установку";
         }
     }
 
-    private static void InstallCore(IProgress<InstallProgress> progress)
+    private static void InstallCore(IProgress<InstallProgress> progress, string targetDriveRoot)
     {
         string tempDir = Path.Combine(
             Path.GetTempPath(), "TimerSetup-" + Guid.NewGuid().ToString("N"));
@@ -224,7 +286,7 @@ public sealed class MainForm : Form
             InstallRuntimeIfPresent(tempDir, progress);
 
             progress.Report(new(70, "Устанавливаю приложение «Таймер»...", null));
-            InstallApplication(tempDir, progress);
+            InstallApplication(tempDir, progress, targetDriveRoot);
 
             progress.Report(new(100, "Приложение установлено.", "Пакет TimerApp успешно установлен."));
         }
@@ -327,7 +389,8 @@ public sealed class MainForm : Form
             progress.Report(new(55, "Среда выполнения не требуется.", "Файл среды выполнения в пакет не входит."));
     }
 
-    private static void InstallApplication(string tempDir, IProgress<InstallProgress> progress)
+    private static void InstallApplication(
+        string tempDir, IProgress<InstallProgress> progress, string targetDriveRoot)
     {
         string? package = Directory.GetFiles(tempDir)
             .Where(f => f.Contains("TimerApp", StringComparison.OrdinalIgnoreCase))
@@ -347,8 +410,36 @@ public sealed class MainForm : Form
 
         progress.Report(new(75, "Ставлю пакет " + Path.GetFileName(package) + "...", null));
 
-        var result = RunPowerShell(
-            $"Add-AppxPackage -Path '{EscapeSingleQuotes(package)}' -ForceApplicationShutdown");
+        PowerShellResult result;
+
+        if (string.IsNullOrWhiteSpace(targetDriveRoot))
+        {
+            result = RunPowerShell(
+                $"Add-AppxPackage -Path '{EscapeSingleQuotes(package)}' -ForceApplicationShutdown");
+        }
+        else
+        {
+            // MSIX нельзя поставить в произвольную папку, но можно выбрать диск:
+            // Windows положит приложение в "<диск>:\\Program Files\\WindowsApps".
+            // Если диск ещё не подготовлен как AppxVolume — подготавливаем.
+            string drivePath = EscapeSingleQuotes(
+                targetDriveRoot.TrimEnd('\\') + "\\");
+
+            progress.Report(new(78,
+                "Ставлю приложение на диск " + targetDriveRoot + "...",
+                "Целевой диск: " + targetDriveRoot));
+
+            string volumeCommand =
+                "$drivePath = '" + drivePath + "'; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue; " +
+                "if (-not $vol) { Add-AppxVolume -Path $drivePath | Out-Null; " +
+                "$vol = Get-AppxVolume -Path $drivePath -ErrorAction SilentlyContinue }; " +
+                "if (-not $vol) { throw 'Failed to prepare the selected drive for Windows apps.' }; " +
+                "Add-AppxPackage -Path '" + EscapeSingleQuotes(package) +
+                "' -Volume $vol -ForceApplicationShutdown";
+
+            result = RunPowerShell(volumeCommand);
+        }
 
         if (result.ExitCode != 0)
         {
