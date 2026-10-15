@@ -1,6 +1,5 @@
 using System;
 using System.Collections.ObjectModel;
-using System.Threading.Tasks;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,7 +19,6 @@ public sealed class TimerViewModel : ObservableObject
 {
     private readonly TimerService _timer;
     private readonly SoundService _sound;
-    private readonly VoiceService _voice;
     private readonly SettingsService _settingsService;
     private readonly AppSettings _settings;
 
@@ -34,19 +32,16 @@ public sealed class TimerViewModel : ObservableObject
     private bool _isMuted;
     private string _soundId = "alarm";
     private bool _isDarkTheme = true;
-    private bool _voiceEnabled = true;
     private string _selectedPresetName = string.Empty;
 
     public TimerViewModel(
         TimerService timer,
         SoundService sound,
-        VoiceService voice,
         SettingsService settingsService,
         AppSettings settings)
     {
         _timer = timer;
         _sound = sound;
-        _voice = voice;
         _settingsService = settingsService;
         _settings = settings;
 
@@ -57,7 +52,6 @@ public sealed class TimerViewModel : ObservableObject
         _isMuted = settings.IsMuted;
         _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
-        _voiceEnabled = settings.VoiceEnabled;
         _selectedPresetName = settings.LastPresetName ?? string.Empty;
 
         foreach (var preset in settings.CustomPresets)
@@ -67,7 +61,6 @@ public sealed class TimerViewModel : ObservableObject
         _timer.SetDuration(InputDuration);
         _sound.ApplyVolume(_volumePercent / 100.0, _isMuted);
         _sound.SetSound(_soundId, _settingsService.GetCustomSoundFilePath(settings));
-        _voice.Configure(_voiceEnabled, _volumePercent / 100.0, _isMuted);
 
         _timer.Ticked += OnTimerTicked;
         _timer.StateChanged += OnTimerStateChanged;
@@ -256,7 +249,6 @@ public sealed class TimerViewModel : ObservableObject
             {
                 _settings.Volume = clamped / 100.0;
                 _sound.ApplyVolume(_settings.Volume, IsMuted);
-                _voice.Configure(VoiceEnabled, _settings.Volume, IsMuted);
                 OnPropertyChanged(nameof(VolumeText));
                 _settingsService.Save(_settings);
             }
@@ -275,12 +267,8 @@ public sealed class TimerViewModel : ObservableObject
                 _settings.IsMuted = value;
                 OnPropertyChanged(nameof(IsNotMuted));
                 _sound.ApplyVolume(_settings.Volume, value);
-                _voice.Configure(VoiceEnabled, _settings.Volume, value);
                 if (value)
-                {
                     _sound.StopAlarm();
-                    _voice.Stop();
-                }
                 _settingsService.Save(_settings);
             }
         }
@@ -299,30 +287,6 @@ public sealed class TimerViewModel : ObservableObject
                 _settings.SoundId = value;
                 _sound.SetSound(value, _settingsService.GetCustomSoundFilePath(_settings));
                 _settingsService.Save(_settings);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Голосовые объявления: озвучивать старт, середину пути и остаток
-    /// времени (5 минут, 1 минута, 10 секунд), а на финише — «Время вышло».
-    /// </summary>
-    public bool VoiceEnabled
-    {
-        get => _voiceEnabled;
-        set
-        {
-            if (SetProperty(ref _voiceEnabled, value))
-            {
-                _settings.VoiceEnabled = value;
-                _voice.Configure(value, _settings.Volume, IsMuted);
-                _settingsService.Save(_settings);
-
-                // Включение подтверждаем вслух — заодно слышно, что голос есть.
-                if (value)
-                    _voice.Speak("Голосовые объявления включены.");
-                else
-                    _voice.Stop();
             }
         }
     }
@@ -459,11 +423,6 @@ public sealed class TimerViewModel : ObservableObject
         _sound.StopAlarm();
         _timer.Start(duration);
         PersistTimerSession();
-
-        string friendly = TimeFormatter.FormatFriendly(duration);
-        _voice.Speak(HasSelectedPreset
-            ? $"Таймер запущен. {SelectedPresetName}: {friendly}."
-            : $"Таймер запущен на {friendly}.");
     }
 
     private void Pause()
@@ -482,7 +441,6 @@ public sealed class TimerViewModel : ObservableObject
     private void Reset()
     {
         _sound.StopAlarm();
-        _voice.Stop();
         _timer.Reset();
         _timer.SetDuration(InputDuration);
         Remaining = InputDuration;
@@ -602,45 +560,12 @@ public sealed class TimerViewModel : ObservableObject
 
     private void OnTimerTicked(object? sender, EventArgs e)
     {
-        double previousSeconds = _remaining.TotalSeconds;
-
         OnPropertyChanged(nameof(EndTimeText));
         OnPropertyChanged(nameof(StatusBrush));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
             : 0;
-
-        AnnounceMilestones(previousSeconds);
-    }
-
-    /// <summary>
-    /// Голосовые объявления на рубежах отсчёта: пересечение порога вниз
-    /// означает, что рубеж только что пройден (старт ровно на пороге,
-    /// например таймер на 5:00, рубежа не вызывает). Срабатывает только
-    /// самый срочный из рубежей, пройденных за один тик.
-    /// </summary>
-    private void AnnounceMilestones(double previousSeconds)
-    {
-        if (!VoiceEnabled || _timer.State != TimerState.Running)
-            return;
-
-        double nowSeconds = _timer.Remaining.TotalSeconds;
-        double totalSeconds = _timer.Duration.TotalSeconds;
-
-        // Остаток вырос («+1 мин») или не изменился — рубежей не проходили.
-        if (nowSeconds >= previousSeconds)
-            return;
-
-        if (previousSeconds > 10 && nowSeconds <= 10)
-            _voice.Speak("Осталось десять секунд.");
-        else if (previousSeconds > 60 && nowSeconds <= 60)
-            _voice.Speak("Осталась одна минута.");
-        else if (previousSeconds > 300 && nowSeconds <= 300)
-            _voice.Speak("Осталось пять минут.");
-        else if (totalSeconds >= 15 * 60 &&
-                 previousSeconds > totalSeconds / 2 && nowSeconds <= totalSeconds / 2)
-            _voice.Speak("Половина времени прошла.");
     }
 
     private void OnTimerStateChanged(object? sender, EventArgs e)
@@ -654,36 +579,8 @@ public sealed class TimerViewModel : ObservableObject
         Remaining = TimeSpan.Zero;
         Progress = 0;
         PersistTimerSession();
-
-        if (VoiceEnabled)
-        {
-            // Сначала голос, звуковой сигнал — парой секунд позже,
-            // чтобы фразу «Время вышло» было слышно целиком.
-            _voice.Speak("Время вышло.");
-            _ = PlayAlarmDelayedAsync();
-        }
-        else
-        {
-            _sound.PlayAlarm();
-        }
-
+        _sound.PlayAlarm();
         TimerFinished?.Invoke(this, EventArgs.Empty);
-    }
-
-    private async Task PlayAlarmDelayedAsync()
-    {
-        try
-        {
-            await Task.Delay(2000);
-
-            // Пользователь мог уже сбросить или перезапустить таймер.
-            if (IsFinished)
-                _sound.PlayAlarm();
-        }
-        catch (Exception)
-        {
-            // Приложение закрывается — сигнал уже не нужен.
-        }
     }
 
     /// <summary>
