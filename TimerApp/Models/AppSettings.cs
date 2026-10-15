@@ -29,6 +29,12 @@ public sealed class AppSettings
     /// <summary>Последняя введённая длительность — секунды.</summary>
     public double LastSeconds { get; set; }
 
+    /// <summary>
+    /// Название последнего выбранного пресета (пусто — длительность
+    /// набрана вручную). Показывается под цифрами таймера.
+    /// </summary>
+    public string LastPresetName { get; set; } = string.Empty;
+
     // --- Сессия таймера: чтобы отсчёт переживал закрытие/падение/перезагрузку ---
 
     /// <summary>Состояние сохранённого таймера: "Running", "Paused" или пусто.</summary>

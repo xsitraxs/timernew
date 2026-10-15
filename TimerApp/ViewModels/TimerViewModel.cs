@@ -32,6 +32,7 @@ public sealed class TimerViewModel : ObservableObject
     private bool _isMuted;
     private string _soundId = "alarm";
     private bool _isDarkTheme = true;
+    private string _selectedPresetName = string.Empty;
 
     public TimerViewModel(
         TimerService timer,
@@ -51,6 +52,7 @@ public sealed class TimerViewModel : ObservableObject
         _isMuted = settings.IsMuted;
         _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        _selectedPresetName = settings.LastPresetName ?? string.Empty;
 
         foreach (var preset in settings.CustomPresets)
             CustomPresets.Add(preset);
@@ -332,6 +334,36 @@ public sealed class TimerViewModel : ObservableObject
 
     public bool HasCustomPresets => CustomPresets.Count > 0;
 
+    /// <summary>
+    /// Название выбранного пресета (пусто, если длительность набрана вручную
+    /// или правлена после выбора пресета).
+    /// </summary>
+    public string SelectedPresetName
+    {
+        get => _selectedPresetName;
+        private set
+        {
+            if (SetProperty(ref _selectedPresetName, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedPreset));
+                OnPropertyChanged(nameof(PresetNameText));
+            }
+        }
+    }
+
+    /// <summary>Есть ли выбранный пресет, чьё название надо показывать.</summary>
+    public bool HasSelectedPreset => !string.IsNullOrWhiteSpace(SelectedPresetName);
+
+    /// <summary>Подпись под цифрами, например «Пресет: Работа».</summary>
+    public string PresetNameText => $"Пресет: {SelectedPresetName}";
+
+    private void SetSelectedPresetName(string name)
+    {
+        SelectedPresetName = name;
+        _settings.LastPresetName = name;
+        _settingsService.Save(_settings);
+    }
+
     /// <summary>Добавляет пресет из диалога «Свой пресет».</summary>
     public void AddCustomPreset(string name, int totalSeconds)
     {
@@ -375,6 +407,7 @@ public sealed class TimerViewModel : ObservableObject
         _settings.Volume = VolumePercent / 100.0;
         _settings.IsMuted = IsMuted;
         _settings.Theme = IsDarkTheme ? "Dark" : "Light";
+        _settings.LastPresetName = SelectedPresetName;
         _settings.CustomPresets = new System.Collections.Generic.List<CustomPreset>(CustomPresets);
         _settingsService.Save(_settings);
     }
@@ -444,7 +477,9 @@ public sealed class TimerViewModel : ObservableObject
         if (!int.TryParse(parameter?.ToString(), out int seconds) || seconds <= 0)
             return;
 
-        ApplyDuration(TimeSpan.FromSeconds(seconds));
+        var duration = TimeSpan.FromSeconds(seconds);
+        ApplyDuration(duration);
+        SetSelectedPresetName(TimeFormatter.FormatFriendly(duration));
     }
 
     private void ApplyCustomPreset(CustomPreset? preset)
@@ -453,6 +488,7 @@ public sealed class TimerViewModel : ObservableObject
             return;
 
         ApplyDuration(TimeSpan.FromSeconds(preset.TotalSeconds));
+        SetSelectedPresetName(preset.Name);
     }
 
     private void DeleteCustomPreset(CustomPreset? preset)
@@ -464,6 +500,10 @@ public sealed class TimerViewModel : ObservableObject
         _settings.CustomPresets.Remove(preset);
         _settingsService.Save(_settings);
         OnPropertyChanged(nameof(HasCustomPresets));
+
+        // Удалили как раз тот пресет, что сейчас выбран, — подпись убираем.
+        if (string.Equals(SelectedPresetName, preset.Name, StringComparison.OrdinalIgnoreCase))
+            SetSelectedPresetName(string.Empty);
     }
 
     /// <summary>«+1 мин» во время отсчёта и паузы.</summary>
@@ -493,6 +533,12 @@ public sealed class TimerViewModel : ObservableObject
 
     private void OnInputDurationChanged()
     {
+        // Любая правка полей ввода означает «время набрано вручную»:
+        // подпись пресета убираем. ApplyPreset/ApplyCustomPreset выставят
+        // название заново уже после ApplyDuration.
+        if (HasSelectedPreset)
+            SetSelectedPresetName(string.Empty);
+
         _settings.LastHours = HoursInput;
         _settings.LastMinutes = MinutesInput;
         _settings.LastSeconds = SecondsInput;

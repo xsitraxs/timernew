@@ -189,6 +189,13 @@
                             FontSize="12"
                             Opacity="0.5"
                             HorizontalAlignment="Center" />
+                        <TextBlock
+                            Text="{Binding PresetNameText, Mode=OneWay}"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Foreground="{StaticResource AccentBrush}"
+                            HorizontalAlignment="Center"
+                            Visibility="{Binding HasSelectedPreset, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
                 </Grid>
 
