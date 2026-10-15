@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.ComponentModel;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
@@ -13,6 +14,8 @@ using TimerApp.Models;
 using TimerApp.Services;
 using TimerApp.ViewModels;
 using Windows.Graphics;
+using Windows.Storage;
+using Windows.Storage.Pickers;
 using Windows.System;
 
 namespace TimerApp;
@@ -28,7 +31,9 @@ public sealed partial class MainWindow : Window
     private readonly TimerService _timerService;
     private readonly SoundService _soundService;
     private bool _isCompact;
+    private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
+    private bool _syncingSoundSelection;
 
     public MainWindow()
     {
@@ -47,6 +52,7 @@ public sealed partial class MainWindow : Window
 
         ConfigureWindow();
         ApplyTheme(ViewModel.IsDarkTheme);
+        SyncSoundComboBoxSelection(ViewModel.SoundId);
 
         RootGrid.Loaded += (_, _) => RootGrid.Focus(FocusState.Programmatic);
         Closed += OnClosed;
@@ -58,7 +64,7 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureWindow()
     {
-        Title = "Таймер";
+        Title = ViewModel.WindowTitleText;
 
         // Фон Mica в стиле Windows 11 (при недоступности просто тема окна).
         try
@@ -78,8 +84,8 @@ public sealed partial class MainWindow : Window
 
         // Размер по умолчанию и центрирование на экране.
         var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
-        int width = 480;
-        int height = 780;
+        int width = 600;
+        int height = 840;
         int x = area.WorkArea.X + (area.WorkArea.Width - width) / 2;
         int y = area.WorkArea.Y + Math.Max(0, (area.WorkArea.Height - height) / 2);
         AppWindow.MoveAndResize(new RectInt32(x, y, width, height));
@@ -98,6 +104,13 @@ public sealed partial class MainWindow : Window
             ApplyTheme(ViewModel.IsDarkTheme);
 
         // Как только состояние ушло из Finished (старт/сброс/правки) — стоп миганию.
+        if (e.PropertyName == nameof(TimerViewModel.WindowTitleText) &&
+            !string.Equals(Title, ViewModel.WindowTitleText, StringComparison.Ordinal))
+        {
+            // Заголовок меняется раз в секунду, а не на каждый тик перерисовки.
+            Title = ViewModel.WindowTitleText;
+        }
+
         if (e.PropertyName == nameof(TimerViewModel.IsFinished) && !ViewModel.IsFinished)
             StopFinishedAnimation();
     }
@@ -109,17 +122,42 @@ public sealed partial class MainWindow : Window
 
     private void CompactButton_Click(object sender, RoutedEventArgs e)
     {
-        _isCompact = !_isCompact;
+        SetMiniMode(!_isCompact);
+    }
 
-        if (_isCompact)
+    /// <summary>
+    /// Мини-режим: маленькое окно поверх всех окон. Остаются только кольцо,
+    /// цифры, статус и кнопки управления — секции настроек прячутся.
+    /// Повторное нажатие возвращает прежний размер и обычную компоновку.
+    /// </summary>
+    private void SetMiniMode(bool mini)
+    {
+        _isCompact = mini;
+
+        var sectionVisibility = mini ? Visibility.Collapsed : Visibility.Visible;
+        InputSection.Visibility = sectionVisibility;
+        PresetsSection.Visibility = sectionVisibility;
+        SoundSection.Visibility = sectionVisibility;
+        HotkeysHint.Visibility = sectionVisibility;
+        MuteTitleButton.Visibility = sectionVisibility;
+        ThemeTitleButton.Visibility = sectionVisibility;
+
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+            presenter.IsAlwaysOnTop = mini;
+
+        if (mini)
         {
-            AppWindow.Resize(new SizeInt32(360, 600));
-            ToolTipService.SetToolTip(CompactButton, "Обычный размер окна");
+            _sizeBeforeMini = AppWindow.Size;
+            AppWindow.Resize(new SizeInt32(400, 460));
+            ToolTipService.SetToolTip(CompactButton, "Обычный режим окна");
         }
         else
         {
-            AppWindow.Resize(new SizeInt32(480, 780));
-            ToolTipService.SetToolTip(CompactButton, "Компактный размер окна");
+            var restore = _sizeBeforeMini.Width >= 480 && _sizeBeforeMini.Height >= 600
+                ? _sizeBeforeMini
+                : new SizeInt32(600, 840);
+            AppWindow.Resize(restore);
+            ToolTipService.SetToolTip(CompactButton, "Мини-окно поверх всех окон");
         }
     }
 
@@ -141,6 +179,9 @@ public sealed partial class MainWindow : Window
 
         if (!AppWindow.IsVisible)
             AppWindow.Show();
+
+        // Поднимаем окно поверх остальных: таймер для того и звенел.
+        Activate();
 
         // Мигание крупных цифр до сброса/нового старта.
         if (RootGrid.Resources["FinishedStoryboard"] is Storyboard storyboard)
@@ -168,6 +209,100 @@ public sealed partial class MainWindow : Window
             storyboard.Stop();
 
         TimeDisplayText.Opacity = 1.0;
+    }
+
+    // ------------------------------------------------------------ выбор звука
+
+    private void SyncSoundComboBoxSelection(string soundId)
+    {
+        _syncingSoundSelection = true;
+        try
+        {
+            foreach (var obj in SoundComboBox.Items)
+            {
+                if (obj is ComboBoxItem item &&
+                    string.Equals(item.Tag as string, soundId, StringComparison.OrdinalIgnoreCase))
+                {
+                    SoundComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _syncingSoundSelection = false;
+        }
+    }
+
+    private async void SoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingSoundSelection)
+            return;
+
+        if (SoundComboBox.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not string soundId)
+        {
+            return;
+        }
+
+        if (string.Equals(soundId, "custom", StringComparison.OrdinalIgnoreCase) &&
+            !ViewModel.HasCustomSound)
+        {
+            // Своего файла ещё нет — сразу открываем выбор файла.
+            await PickCustomSoundAsync();
+            return;
+        }
+
+        ViewModel.SoundId = soundId;
+    }
+
+    private async void SelectCustomSoundButton_Click(object sender, RoutedEventArgs e)
+    {
+        await PickCustomSoundAsync();
+    }
+
+    private async System.Threading.Tasks.Task PickCustomSoundAsync()
+    {
+        var picker = new FileOpenPicker
+        {
+            ViewMode = PickerViewMode.Thumbnail,
+            SuggestedStartLocation = PickerLocationId.MusicLibrary
+        };
+        picker.FileTypeFilter.Add(".wav");
+        picker.FileTypeFilter.Add(".mp3");
+        picker.FileTypeFilter.Add(".m4a");
+        picker.FileTypeFilter.Add(".flac");
+
+        // Для настольного WinUI-приложения пикеру нужен HWND окна.
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+        StorageFile? file = await picker.PickSingleFileAsync();
+        if (file is null)
+        {
+            SyncSoundComboBoxSelection(ViewModel.SoundId);
+            return;
+        }
+
+        string targetName = "custom-sound" + file.FileType;
+        string folderPath = _settingsService.GetCustomSoundFolderPath();
+
+        try
+        {
+            var folder = await StorageFolder.GetFolderFromPathAsync(folderPath);
+            await file.CopyAsync(folder, targetName, NameCollisionOption.ReplaceExisting);
+        }
+        catch (Exception)
+        {
+            // Резервный путь обычным копированием файла.
+            if (!string.IsNullOrWhiteSpace(file.Path))
+                File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
+            else
+                throw;
+        }
+
+        ViewModel.SetCustomSoundFile(targetName);
+        SyncSoundComboBoxSelection("custom");
     }
 
     // ------------------------------------------------------------ свои пресеты
@@ -227,7 +362,7 @@ public sealed partial class MainWindow : Window
             Header = "Минуты",
             Minimum = 0,
             Maximum = 23 * 60 + 59,
-            Value = 10,
+            Value = ViewModel.HoursInput * 60 + ViewModel.MinutesInput,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
         };
 
@@ -236,7 +371,7 @@ public sealed partial class MainWindow : Window
             Header = "Секунды",
             Minimum = 0,
             Maximum = 59,
-            Value = 0,
+            Value = ViewModel.SecondsInput,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
         };
 

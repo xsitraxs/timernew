@@ -30,6 +30,7 @@ public sealed class TimerViewModel : ObservableObject
     private TimerState _state = TimerState.Idle;
     private double _volumePercent = 70;
     private bool _isMuted;
+    private string _soundId = "alarm";
     private bool _isDarkTheme = true;
 
     public TimerViewModel(
@@ -48,6 +49,7 @@ public sealed class TimerViewModel : ObservableObject
         _secondsInput = Math.Clamp(settings.LastSeconds, 0, 59);
         _volumePercent = Math.Clamp(settings.Volume, 0, 1) * 100;
         _isMuted = settings.IsMuted;
+        _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
 
         foreach (var preset in settings.CustomPresets)
@@ -56,6 +58,7 @@ public sealed class TimerViewModel : ObservableObject
         _remaining = InputDuration;
         _timer.SetDuration(InputDuration);
         _sound.ApplyVolume(_volumePercent / 100.0, _isMuted);
+        _sound.SetSound(_soundId, _settingsService.GetCustomSoundFilePath(settings));
 
         _timer.Ticked += OnTimerTicked;
         _timer.StateChanged += OnTimerStateChanged;
@@ -69,10 +72,12 @@ public sealed class TimerViewModel : ObservableObject
         ApplyPresetCommand = new RelayCommand<object?>(ApplyPreset);
         ApplyCustomPresetCommand = new RelayCommand<CustomPreset>(ApplyCustomPreset);
         DeleteCustomPresetCommand = new RelayCommand<CustomPreset>(DeleteCustomPreset);
+        AddMinuteCommand = new RelayCommand(AddMinute, () => IsRunning || IsPaused);
         ToggleMuteCommand = new RelayCommand(ToggleMute);
         PreviewSoundCommand = new RelayCommand(() => _sound.PlayPreview());
 
         RefreshStateProperties();
+        RestoreSavedSession();
     }
 
     /// <summary>Таймер дошёл до нуля: окно показывает уведомление и мигание.</summary>
@@ -134,6 +139,9 @@ public sealed class TimerViewModel : ObservableObject
     /// <summary>Кнопка «Старт» видна до запуска и после финиша («Ещё раз»).</summary>
     public bool ShowStart => IsIdle || IsFinished;
 
+    /// <summary>Кнопка «+1 мин» видна во время отсчёта и на паузе.</summary>
+    public bool ShowAddMinute => IsRunning || IsPaused;
+
     public bool IsIdle => State == TimerState.Idle;
     public bool IsRunning => State == TimerState.Running;
     public bool IsPaused => State == TimerState.Paused;
@@ -151,6 +159,9 @@ public sealed class TimerViewModel : ObservableObject
     /// <summary>Цвет точки-индикатора состояния.</summary>
     public Brush StatusBrush => State switch
     {
+        // Последние 10 секунд точка тревожно краснеет.
+        TimerState.Running when Remaining <= TimeSpan.FromSeconds(10)
+            => new SolidColorBrush(Colors.OrangeRed),
         TimerState.Running => new SolidColorBrush(Colors.LimeGreen),
         TimerState.Paused => new SolidColorBrush(Colors.Orange),
         TimerState.Finished => new SolidColorBrush(Colors.OrangeRed),
@@ -166,6 +177,7 @@ public sealed class TimerViewModel : ObservableObject
             if (SetProperty(ref _remaining, value))
             {
                 OnPropertyChanged(nameof(DisplayTime));
+                OnPropertyChanged(nameof(WindowTitleText));
             }
         }
     }
@@ -192,6 +204,17 @@ public sealed class TimerViewModel : ObservableObject
                 OnPropertyChanged(nameof(ProgressPercentText));
         }
     }
+
+    /// <summary>
+    /// Текст заголовка окна (он же виден на кнопке панели задач и в Alt-Tab):
+    /// во время отсчёта — живой остаток, на финише — «Время вышло».
+    /// </summary>
+    public string WindowTitleText => State switch
+    {
+        TimerState.Running or TimerState.Paused => $"{DisplayTime} — Таймер",
+        TimerState.Finished => "Время вышло — Таймер",
+        _ => "Таймер"
+    };
 
     /// <summary>Осталось в процентах, например «42%».</summary>
     public string ProgressPercentText => $"{(int)Math.Round(Progress * 100)}%";
@@ -251,6 +274,41 @@ public sealed class TimerViewModel : ObservableObject
 
     // ------------------------------------------------------------------ тема
 
+    /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
+    public string SoundId
+    {
+        get => _soundId;
+        set
+        {
+            if (SetProperty(ref _soundId, value))
+            {
+                _settings.SoundId = value;
+                _sound.SetSound(value, _settingsService.GetCustomSoundFilePath(_settings));
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>Выбран ли пользовательский файл звука.</summary>
+    public bool HasCustomSound => !string.IsNullOrWhiteSpace(_settings.CustomSoundFileName);
+
+    /// <summary>Регистрирует скопированный пользовательский файл как текущую мелодию.</summary>
+    public void SetCustomSoundFile(string fileName)
+    {
+        _settings.CustomSoundFileName = fileName;
+        OnPropertyChanged(nameof(HasCustomSound));
+
+        if (string.Equals(_soundId, "custom", StringComparison.OrdinalIgnoreCase))
+        {
+            _sound.SetSound("custom", _settingsService.GetCustomSoundFilePath(_settings));
+            _settingsService.Save(_settings);
+        }
+        else
+        {
+            SoundId = "custom";
+        }
+    }
+
     /// <summary>Обратное к IsMuted — для IsEnabled кнопки проверки звука.</summary>
     public bool IsNotMuted => !IsMuted;
 
@@ -304,6 +362,7 @@ public sealed class TimerViewModel : ObservableObject
     public ICommand ApplyPresetCommand { get; }
     public ICommand ApplyCustomPresetCommand { get; }
     public ICommand DeleteCustomPresetCommand { get; }
+    public ICommand AddMinuteCommand { get; }
     public ICommand ToggleMuteCommand { get; }
     public ICommand PreviewSoundCommand { get; }
 
@@ -330,14 +389,20 @@ public sealed class TimerViewModel : ObservableObject
 
         _sound.StopAlarm();
         _timer.Start(duration);
+        PersistTimerSession();
     }
 
-    private void Pause() => _timer.Pause();
+    private void Pause()
+    {
+        _timer.Pause();
+        PersistTimerSession();
+    }
 
     private void Resume()
     {
         _sound.StopAlarm();
         _timer.Resume();
+        PersistTimerSession();
     }
 
     private void Reset()
@@ -347,6 +412,7 @@ public sealed class TimerViewModel : ObservableObject
         _timer.SetDuration(InputDuration);
         Remaining = InputDuration;
         Progress = 1.0;
+        PersistTimerSession();
     }
 
     /// <summary>Пробел: старт / пауза / продолжить в зависимости от состояния.</summary>
@@ -400,6 +466,13 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(HasCustomPresets));
     }
 
+    /// <summary>«+1 мин» во время отсчёта и паузы.</summary>
+    private void AddMinute()
+    {
+        _timer.AddTime(TimeSpan.FromMinutes(1));
+        PersistTimerSession();
+    }
+
     private void ToggleMute() => IsMuted = !IsMuted;
 
     private void ApplyDuration(TimeSpan duration)
@@ -442,6 +515,7 @@ public sealed class TimerViewModel : ObservableObject
     private void OnTimerTicked(object? sender, EventArgs e)
     {
         OnPropertyChanged(nameof(EndTimeText));
+        OnPropertyChanged(nameof(StatusBrush));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
@@ -458,8 +532,84 @@ public sealed class TimerViewModel : ObservableObject
     {
         Remaining = TimeSpan.Zero;
         Progress = 0;
+        PersistTimerSession();
         _sound.PlayAlarm();
         TimerFinished?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// Сохраняет сессию отсчёта, чтобы приложение пережило закрытие,
+    /// падение и перезагрузку ПК. На финише и сбросе сессия очищается.
+    /// </summary>
+    private void PersistTimerSession()
+    {
+        switch (_timer.State)
+        {
+            case TimerState.Running:
+                _settings.SavedTimerState = "Running";
+                _settings.SavedTimerEndUtcTicks = _timer.EndTimeUtc.UtcTicks;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                break;
+
+            case TimerState.Paused:
+                _settings.SavedTimerState = "Paused";
+                _settings.SavedTimerEndUtcTicks = 0;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                break;
+
+            default:
+                _settings.SavedTimerState = string.Empty;
+                _settings.SavedTimerEndUtcTicks = 0;
+                _settings.SavedTimerDurationSeconds = 0;
+                _settings.SavedTimerRemainingSeconds = 0;
+                break;
+        }
+
+        _settingsService.Save(_settings);
+    }
+
+    /// <summary>Подхватывает сохранённый отсчёт при запуске приложения.</summary>
+    private void RestoreSavedSession()
+    {
+        try
+        {
+            var duration = TimeSpan.FromSeconds(_settings.SavedTimerDurationSeconds);
+            if (duration <= TimeSpan.Zero)
+                return;
+
+            if (string.Equals(_settings.SavedTimerState, "Running", StringComparison.OrdinalIgnoreCase) &&
+                _settings.SavedTimerEndUtcTicks > 0)
+            {
+                var endUtc = new DateTimeOffset(_settings.SavedTimerEndUtcTicks, TimeSpan.Zero);
+                _timer.RestoreRunning(duration, endUtc);
+                Remaining = _timer.Remaining;
+                Progress = _timer.State == TimerState.Finished
+                    ? 0
+                    : Math.Clamp(_timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+
+                // Дедлайн прошёл, пока приложения не было: показали Finished
+                // один раз и очистили сессию, чтобы не воскрешать её снова.
+                if (_timer.State == TimerState.Finished)
+                    PersistTimerSession();
+            }
+            else if (string.Equals(_settings.SavedTimerState, "Paused", StringComparison.OrdinalIgnoreCase))
+            {
+                _timer.RestorePaused(
+                    duration,
+                    TimeSpan.FromSeconds(_settings.SavedTimerRemainingSeconds));
+                Remaining = _timer.Remaining;
+                Progress = Math.Clamp(_timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+            }
+        }
+        catch (Exception)
+        {
+            // Повреждённая сохранённая сессия не должна мешать запуску:
+            // просто очищаем её и стартуем как обычно.
+            _settings.SavedTimerState = string.Empty;
+            _settingsService.Save(_settings);
+        }
     }
 
     private void RefreshStateProperties()
@@ -470,13 +620,16 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(IsFinished));
         OnPropertyChanged(nameof(CanEditInputs));
         OnPropertyChanged(nameof(ShowStart));
+        OnPropertyChanged(nameof(ShowAddMinute));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(DisplayTime));
+        OnPropertyChanged(nameof(WindowTitleText));
         OnPropertyChanged(nameof(EndTimeText));
 
         (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (PauseCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ResumeCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (AddMinuteCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 }

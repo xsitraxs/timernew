@@ -14,7 +14,10 @@ namespace TimerApp.Services;
 /// </summary>
 public sealed class SoundService : IDisposable
 {
-    private const int AlarmRepeatCount = 3;
+    // Один проход WAV — ~1,1 сек. 30 повторов — около 35 секунд сигнала:
+    // достаточно, чтобы услышать из другой комнаты, но не бесконечно.
+    // Любое действие пользователя (старт/сброс/пауза/mute) глушит раньше.
+    private const int AlarmRepeatCount = 30;
 
     private readonly MediaPlayer _player;
     private int _playsDone;
@@ -34,13 +37,61 @@ public sealed class SoundService : IDisposable
         _player.MediaEnded += OnMediaEnded;
     }
 
+    /// <summary>
+    /// Выбирает мелодию: встроенную (alarm/chime/beep/gentle по id)
+    /// или пользовательский файл (id "custom" + путь к копии файла).
+    /// </summary>
+    public void SetSound(string? soundId, string? customFilePath)
+    {
+        StopAlarm();
+
+        try
+        {
+            Uri uri;
+
+            if (string.Equals(soundId, "custom", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(customFilePath) &&
+                System.IO.File.Exists(customFilePath))
+            {
+                uri = new Uri(customFilePath);
+            }
+            else
+            {
+                string file = soundId?.ToLowerInvariant() switch
+                {
+                    "chime" => "chime.wav",
+                    "beep" => "beep.wav",
+                    "gentle" => "gentle.wav",
+                    _ => "alarm.wav"
+                };
+                uri = new Uri("ms-appx:///Assets/" + file);
+            }
+
+            _player.Source = MediaSource.CreateFromUri(uri);
+        }
+        catch (Exception)
+        {
+            // Битый пользовательский файл не должен оставлять без звука:
+            // откатываемся на встроенный сигнал.
+            try
+            {
+                _player.Source = MediaSource.CreateFromUri(
+                    new Uri("ms-appx:///Assets/alarm.wav"));
+            }
+            catch (Exception)
+            {
+                // Плеер уже освобождён.
+            }
+        }
+    }
+
     /// <summary>Применяет громкость (0..1) и состояние mute.</summary>
     public void ApplyVolume(double volume01, bool isMuted)
     {
         _player.Volume = isMuted ? 0.0 : Math.Clamp(volume01, 0.0, 1.0);
     }
 
-    /// <summary>Запускает сигнал окончания (повтор до 3 раз).</summary>
+    /// <summary>Запускает сигнал окончания (до ~35 секунд или до действия пользователя).</summary>
     public void PlayAlarm()
     {
         _alarmActive = true;

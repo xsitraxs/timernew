@@ -14,6 +14,12 @@ public sealed class AppSettings
     /// <summary>Звук отключён кнопкой mute.</summary>
     public bool IsMuted { get; set; }
 
+    /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
+    public string SoundId { get; set; } = "alarm";
+
+    /// <summary>Имя скопированного пользовательского файла звука в LocalFolder.</summary>
+    public string CustomSoundFileName { get; set; } = string.Empty;
+
     /// <summary>Последняя введённая длительность — часы.</summary>
     public double LastHours { get; set; }
 
@@ -22,6 +28,20 @@ public sealed class AppSettings
 
     /// <summary>Последняя введённая длительность — секунды.</summary>
     public double LastSeconds { get; set; }
+
+    // --- Сессия таймера: чтобы отсчёт переживал закрытие/падение/перезагрузку ---
+
+    /// <summary>Состояние сохранённого таймера: "Running", "Paused" или пусто.</summary>
+    public string SavedTimerState { get; set; } = string.Empty;
+
+    /// <summary>Момент окончания (UTC ticks) для запущенного таймера.</summary>
+    public long SavedTimerEndUtcTicks { get; set; }
+
+    /// <summary>Полная длительность сохранённого таймера, секунды.</summary>
+    public double SavedTimerDurationSeconds { get; set; }
+
+    /// <summary>Оставшееся время сохранённого таймера на паузе, секунды.</summary>
+    public double SavedTimerRemainingSeconds { get; set; }
 
     /// <summary>Сохранённые пользователем пресеты.</summary>
     public List<CustomPreset> CustomPresets { get; set; } = new();

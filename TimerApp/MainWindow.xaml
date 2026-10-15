@@ -61,7 +61,6 @@
                         <Setter Target="RingControl.Height" Value="208" />
                         <Setter Target="TimeDisplayText.FontSize" Value="40" />
                         <Setter Target="ContentPanel.Padding" Value="16,4,16,16" />
-                        <Setter Target="HeaderSubtitle.Visibility" Value="Collapsed" />
                     </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="NormalState">
@@ -84,32 +83,33 @@
         </Grid.RowDefinitions>
 
         <!-- ===================== Заголовок окна / TitleBar ===================== -->
-        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Margin="16,0,150,0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="48" Margin="16,0,156,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="10">
                 <FontIcon Glyph="&#xE916;" FontSize="18" Foreground="{StaticResource AccentBrush}" />
-                <StackPanel>
-                    <TextBlock Text="Таймер" FontSize="14" FontWeight="SemiBold" />
-                    <TextBlock
-                        x:Name="HeaderSubtitle"
-                        Text="Точный отсчёт по времени окончания"
-                        FontSize="11"
-                        Opacity="0.65" />
-                </StackPanel>
+                <TextBlock Text="Таймер" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
             </StackPanel>
 
             <StackPanel
+                Grid.Column="2"
                 Orientation="Horizontal"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
-                Spacing="4">
+                Spacing="6">
                 <Button
                     x:Name="CompactButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Click="CompactButton_Click"
-                    ToolTipService.ToolTip="Компактный размер окна">
+                    AutomationProperties.Name="Компактный размер окна"
+                    ToolTipService.ToolTip="Мини-окно поверх всех окон">
                     <FontIcon Glyph="&#xE740;" FontSize="14" />
                 </Button>
                 <Button
+                    x:Name="MuteTitleButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Command="{Binding ToggleMuteCommand}"
                     ToolTipService.ToolTip="Отключить / включить звук">
@@ -123,6 +123,7 @@
                     </Grid>
                 </Button>
                 <Button
+                    x:Name="ThemeTitleButton"
                     Style="{StaticResource TitleBarButtonStyle}"
                     Click="ToggleThemeButton_Click"
                     ToolTipService.ToolTip="Светлая / тёмная тема">
@@ -240,6 +241,14 @@
                         </StackPanel>
                     </Button>
                     <Button
+                        Content="+1 мин"
+                        Command="{Binding AddMinuteCommand}"
+                        Visibility="{Binding ShowAddMinute, Converter={StaticResource BoolToVisibility}}"
+                        MinWidth="92"
+                        CornerRadius="8"
+                        Padding="14,10"
+                        ToolTipService.ToolTip="Добавить минуту к текущему отсчёту" />
+                    <Button
                         Command="{Binding ResetCommand}"
                         Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"
                         MinWidth="110"
@@ -253,7 +262,7 @@
                 </StackPanel>
 
                 <!-- Ввод длительности -->
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border x:Name="InputSection" Style="{StaticResource CardBorderStyle}">
                     <StackPanel Spacing="10">
                         <TextBlock Text="Длительность" FontWeight="SemiBold" FontSize="14" />
                         <Grid ColumnSpacing="10">
@@ -296,7 +305,7 @@
                 </Border>
 
                 <!-- Пресеты -->
-                <Border Style="{StaticResource CardBorderStyle}">
+                <Border x:Name="PresetsSection" Style="{StaticResource CardBorderStyle}">
                     <StackPanel Spacing="12">
                         <TextBlock Text="Пресеты" FontWeight="SemiBold" FontSize="14" />
 
@@ -384,6 +393,7 @@
 
                 <!-- Звук: в минималистичной компоновке это сворачиваемые настройки -->
                 <Expander
+                    x:Name="SoundSection"
                     Header="Звук и уведомления"
                     IsExpanded="False"
                     HorizontalAlignment="Stretch"
@@ -431,6 +441,31 @@
                                 IsEnabled="{Binding IsNotMuted}"
                                 Command="{Binding PreviewSoundCommand}" />
                         </Grid>
+                        <Grid ColumnSpacing="10" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox
+                                x:Name="SoundComboBox"
+                                Grid.Column="0"
+                                Header="Мелодия"
+                                HorizontalAlignment="Stretch"
+                                SelectionChanged="SoundComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Классическая — две ноты" Tag="alarm" />
+                                <ComboBoxItem Content="Колокольчики" Tag="chime" />
+                                <ComboBoxItem Content="Цифровые бипы" Tag="beep" />
+                                <ComboBoxItem Content="Мягкая" Tag="gentle" />
+                                <ComboBoxItem Content="Свой файл" Tag="custom" />
+                            </ComboBox>
+                            <Button
+                                Grid.Column="1"
+                                Content="Свой файл..."
+                                CornerRadius="8"
+                                VerticalAlignment="Bottom"
+                                Click="SelectCustomSoundButton_Click"
+                                ToolTipService.ToolTip="Выбрать свой звуковой файл (wav, mp3, m4a)" />
+                        </Grid>
                         <TextBlock
                             Text="По окончании: звуковой сигнал и уведомление Windows — даже если окно свёрнуто."
                             FontSize="12"
@@ -440,6 +475,7 @@
                 </Expander>
 
                 <TextBlock
+                    x:Name="HotkeysHint"
                     Text="Горячие клавиши:  Пробел — старт / пауза / продолжить  •  Esc — сброс  •  Enter — старт"
                     FontSize="12"
                     Opacity="0.55"
