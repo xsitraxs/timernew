@@ -58,20 +58,33 @@ public sealed class NotificationService
         }
     }
 
-    /// <summary>Показывает тост «Время вышло».</summary>
-    public void ShowTimerFinished(string durationText)
+    /// <summary>
+    /// Показывает тост о завершении. С названием таймера звучит по-человечески:
+    /// «Чай — готово!» вместо безликого «время вышло».
+    /// </summary>
+    public void ShowTimerFinished(string? timerName, string durationText)
     {
         if (!_registered)
             return;
 
         try
         {
-            var notification = new AppNotificationBuilder()
-                .AddText("Таймер завершён")
-                .AddText($"Время вышло: {durationText}.")
-                .BuildNotification();
+            var builder = new AppNotificationBuilder();
 
-            AppNotificationManager.Default.Show(notification);
+            if (!string.IsNullOrWhiteSpace(timerName))
+            {
+                builder
+                    .AddText(timerName.Trim())
+                    .AddText($"Готово! Время вышло (таймер на {durationText}).");
+            }
+            else
+            {
+                builder
+                    .AddText("Таймер завершён")
+                    .AddText($"Время вышло: {durationText}.");
+            }
+
+            AppNotificationManager.Default.Show(builder.BuildNotification());
         }
         catch (Exception)
         {

@@ -31,6 +31,8 @@ public sealed class SettingsService
     private const string SavedEndKey = "SavedTimerEndUtcTicks";
     private const string SavedDurationKey = "SavedTimerDurationSeconds";
     private const string SavedRemainingKey = "SavedTimerRemainingSeconds";
+    private const string LastPresetNameKey = "LastPresetName";
+    private const string LastTimerNameKey = "LastTimerName";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -61,7 +63,9 @@ public sealed class SettingsService
                 SavedTimerState = GetString(values, SavedStateKey, string.Empty),
                 SavedTimerEndUtcTicks = GetLong(values, SavedEndKey, 0),
                 SavedTimerDurationSeconds = GetDouble(values, SavedDurationKey, 0),
-                SavedTimerRemainingSeconds = GetDouble(values, SavedRemainingKey, 0)
+                SavedTimerRemainingSeconds = GetDouble(values, SavedRemainingKey, 0),
+                LastPresetName = GetString(values, LastPresetNameKey, string.Empty),
+                LastTimerName = GetString(values, LastTimerNameKey, string.Empty)
             };
 
             // Битый JSON пресетов не должен сбрасывать все остальные настройки:
@@ -112,6 +116,8 @@ public sealed class SettingsService
                 values[SavedEndKey] = settings.SavedTimerEndUtcTicks;
                 values[SavedDurationKey] = settings.SavedTimerDurationSeconds;
                 values[SavedRemainingKey] = settings.SavedTimerRemainingSeconds;
+                values[LastPresetNameKey] = settings.LastPresetName;
+                values[LastTimerNameKey] = settings.LastTimerName;
                 return;
             }
             catch (Exception)

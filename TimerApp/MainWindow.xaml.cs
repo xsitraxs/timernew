@@ -165,10 +165,10 @@ public sealed partial class MainWindow : Window
 
     private void OnTimerFinished(object? sender, EventArgs e)
     {
-        // Системное уведомление Windows.
+        // Системное уведомление Windows (с названием таймера, если задано).
         string durationText = TimeFormatter.FormatFriendly(_timerService.Duration);
         if (Application.Current is App app)
-            app.Notifications.ShowTimerFinished(durationText);
+            app.Notifications.ShowTimerFinished(ViewModel.TimerName, durationText);
 
         // Если окно свёрнуто или не в фокусе — показать его пользователю.
         if (AppWindow.Presenter is OverlappedPresenter presenter &&
@@ -186,6 +186,27 @@ public sealed partial class MainWindow : Window
         // Мигание крупных цифр до сброса/нового старта.
         if (RootGrid.Resources["FinishedStoryboard"] is Storyboard storyboard)
             storyboard.Begin();
+    }
+
+    // ------------------------------------------------------------ быстрый ввод
+
+    private void QuickInputBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Enter)
+        {
+            ApplyQuickInputFromBox();
+            e.Handled = true;
+        }
+    }
+
+    private void QuickInputButton_Click(object sender, RoutedEventArgs e) =>
+        ApplyQuickInputFromBox();
+
+    private void ApplyQuickInputFromBox()
+    {
+        // При успешном разборе чистим поле: результат и так виден под цифрами.
+        if (ViewModel.ApplyQuickInput(QuickInputBox.Text))
+            QuickInputBox.Text = string.Empty;
     }
 
     /// <summary>Активация окна по клику на тост (потокобезопасно).</summary>
