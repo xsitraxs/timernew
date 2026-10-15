@@ -20,6 +20,12 @@ public sealed class AppSettings
     /// <summary>Имя скопированного пользовательского файла звука в LocalFolder.</summary>
     public string CustomSoundFileName { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Голосовые объявления: озвучивать старт, середину пути, «осталось
+    /// 5 минут», «осталась минута» и «время вышло». По умолчанию включены.
+    /// </summary>
+    public bool VoiceEnabled { get; set; } = true;
+
     /// <summary>Последняя введённая длительность — часы.</summary>
     public double LastHours { get; set; }
 

@@ -30,6 +30,7 @@ public sealed partial class MainWindow : Window
     private readonly SettingsService _settingsService;
     private readonly TimerService _timerService;
     private readonly SoundService _soundService;
+    private readonly VoiceService _voiceService;
     private bool _isCompact;
     private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
@@ -44,8 +45,9 @@ public sealed partial class MainWindow : Window
 
         _timerService = new TimerService();
         _soundService = new SoundService();
+        _voiceService = new VoiceService();
 
-        ViewModel = new TimerViewModel(_timerService, _soundService, _settingsService, settings);
+        ViewModel = new TimerViewModel(_timerService, _soundService, _voiceService, _settingsService, settings);
         RootGrid.DataContext = ViewModel;
         ViewModel.TimerFinished += OnTimerFinished;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -450,5 +452,6 @@ public sealed partial class MainWindow : Window
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         _timerService.Dispose();
         _soundService.Dispose();
+        _voiceService.Dispose();
     }
 }

@@ -473,6 +473,15 @@
                                 Click="SelectCustomSoundButton_Click"
                                 ToolTipService.ToolTip="Выбрать свой звуковой файл (wav, mp3, m4a)" />
                         </Grid>
+                        <ToggleSwitch
+                            Header="Голосовые объявления"
+                            Margin="0,6,0,0"
+                            IsOn="{Binding VoiceEnabled, Mode=TwoWay}" />
+                        <TextBlock
+                            Text="Приложение озвучит: «таймер запущен», половину пути, «осталось 5 минут», «осталась минута», «осталось 10 секунд» и «время вышло». Удобно, когда не смотришь на экран. Нужен голос в Windows (на русской системе обычно установлен)."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
                         <TextBlock
                             Text="По окончании: звуковой сигнал и уведомление Windows — даже если окно свёрнуто."
                             FontSize="12"
