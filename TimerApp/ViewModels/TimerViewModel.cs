@@ -177,6 +177,7 @@ public sealed class TimerViewModel : ObservableObject
             if (SetProperty(ref _remaining, value))
             {
                 OnPropertyChanged(nameof(DisplayTime));
+                OnPropertyChanged(nameof(WindowTitleText));
             }
         }
     }
@@ -203,6 +204,17 @@ public sealed class TimerViewModel : ObservableObject
                 OnPropertyChanged(nameof(ProgressPercentText));
         }
     }
+
+    /// <summary>
+    /// Текст заголовка окна (он же виден на кнопке панели задач и в Alt-Tab):
+    /// во время отсчёта — живой остаток, на финише — «Время вышло».
+    /// </summary>
+    public string WindowTitleText => State switch
+    {
+        TimerState.Running or TimerState.Paused => $"{DisplayTime} — Таймер",
+        TimerState.Finished => "Время вышло — Таймер",
+        _ => "Таймер"
+    };
 
     /// <summary>Осталось в процентах, например «42%».</summary>
     public string ProgressPercentText => $"{(int)Math.Round(Progress * 100)}%";
@@ -612,6 +624,7 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(DisplayTime));
+        OnPropertyChanged(nameof(WindowTitleText));
         OnPropertyChanged(nameof(EndTimeText));
 
         (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();

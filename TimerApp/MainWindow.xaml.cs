@@ -64,7 +64,7 @@ public sealed partial class MainWindow : Window
 
     private void ConfigureWindow()
     {
-        Title = "Таймер";
+        Title = ViewModel.WindowTitleText;
 
         // Фон Mica в стиле Windows 11 (при недоступности просто тема окна).
         try
@@ -104,6 +104,13 @@ public sealed partial class MainWindow : Window
             ApplyTheme(ViewModel.IsDarkTheme);
 
         // Как только состояние ушло из Finished (старт/сброс/правки) — стоп миганию.
+        if (e.PropertyName == nameof(TimerViewModel.WindowTitleText) &&
+            !string.Equals(Title, ViewModel.WindowTitleText, StringComparison.Ordinal))
+        {
+            // Заголовок меняется раз в секунду, а не на каждый тик перерисовки.
+            Title = ViewModel.WindowTitleText;
+        }
+
         if (e.PropertyName == nameof(TimerViewModel.IsFinished) && !ViewModel.IsFinished)
             StopFinishedAnimation();
     }
