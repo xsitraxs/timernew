@@ -33,6 +33,14 @@ public sealed class SettingsService
     private const string SavedRemainingKey = "SavedTimerRemainingSeconds";
     private const string LastPresetNameKey = "LastPresetName";
     private const string LastTimerNameKey = "LastTimerName";
+    private const string IntervalModeKey = "IntervalModeEnabled";
+    private const string IntervalWorkNameKey = "IntervalWorkName";
+    private const string IntervalRestNameKey = "IntervalRestName";
+    private const string IntervalWorkSecondsKey = "IntervalWorkSeconds";
+    private const string IntervalRestSecondsKey = "IntervalRestSeconds";
+    private const string IntervalRoundsKey = "IntervalRounds";
+    private const string SavedIntervalPhaseKey = "SavedIntervalPhase";
+    private const string SavedIntervalRoundKey = "SavedIntervalRound";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -65,7 +73,15 @@ public sealed class SettingsService
                 SavedTimerDurationSeconds = GetDouble(values, SavedDurationKey, 0),
                 SavedTimerRemainingSeconds = GetDouble(values, SavedRemainingKey, 0),
                 LastPresetName = GetString(values, LastPresetNameKey, string.Empty),
-                LastTimerName = GetString(values, LastTimerNameKey, string.Empty)
+                LastTimerName = GetString(values, LastTimerNameKey, string.Empty),
+                IntervalModeEnabled = GetBool(values, IntervalModeKey, false),
+                IntervalWorkName = GetString(values, IntervalWorkNameKey, "Бег"),
+                IntervalRestName = GetString(values, IntervalRestNameKey, "Ходьба"),
+                IntervalWorkSeconds = GetDouble(values, IntervalWorkSecondsKey, 90),
+                IntervalRestSeconds = GetDouble(values, IntervalRestSecondsKey, 120),
+                IntervalRounds = GetDouble(values, IntervalRoundsKey, 10),
+                SavedIntervalPhase = GetLong(values, SavedIntervalPhaseKey, 0),
+                SavedIntervalRound = GetLong(values, SavedIntervalRoundKey, 0)
             };
 
             // Битый JSON пресетов не должен сбрасывать все остальные настройки:
@@ -118,6 +134,14 @@ public sealed class SettingsService
                 values[SavedRemainingKey] = settings.SavedTimerRemainingSeconds;
                 values[LastPresetNameKey] = settings.LastPresetName;
                 values[LastTimerNameKey] = settings.LastTimerName;
+                values[IntervalModeKey] = settings.IntervalModeEnabled;
+                values[IntervalWorkNameKey] = settings.IntervalWorkName;
+                values[IntervalRestNameKey] = settings.IntervalRestName;
+                values[IntervalWorkSecondsKey] = settings.IntervalWorkSeconds;
+                values[IntervalRestSecondsKey] = settings.IntervalRestSeconds;
+                values[IntervalRoundsKey] = settings.IntervalRounds;
+                values[SavedIntervalPhaseKey] = settings.SavedIntervalPhase;
+                values[SavedIntervalRoundKey] = settings.SavedIntervalRound;
                 return;
             }
             catch (Exception)
