@@ -137,6 +137,7 @@ public sealed partial class MainWindow : Window
         var sectionVisibility = mini ? Visibility.Collapsed : Visibility.Visible;
         InputSection.Visibility = sectionVisibility;
         PresetsSection.Visibility = sectionVisibility;
+        IntervalSection.Visibility = sectionVisibility;
         SoundSection.Visibility = sectionVisibility;
         HotkeysHint.Visibility = sectionVisibility;
         MuteTitleButton.Visibility = sectionVisibility;
@@ -165,10 +166,14 @@ public sealed partial class MainWindow : Window
 
     private void OnTimerFinished(object? sender, EventArgs e)
     {
-        // Системное уведомление Windows (с названием таймера, если задано).
+        // Системное уведомление Windows (с названием таймера, если задано;
+        // для интервальной тренировки — просто «Тренировка»).
         string durationText = TimeFormatter.FormatFriendly(_timerService.Duration);
+        string toastName = ViewModel.HasTimerName
+            ? ViewModel.TimerName
+            : ViewModel.IntervalJustFinished ? "Тренировка" : string.Empty;
         if (Application.Current is App app)
-            app.Notifications.ShowTimerFinished(ViewModel.TimerName, durationText);
+            app.Notifications.ShowTimerFinished(toastName, durationText);
 
         // Если окно свёрнуто или не в фокусе — показать его пользователю.
         if (AppWindow.Presenter is OverlappedPresenter presenter &&
