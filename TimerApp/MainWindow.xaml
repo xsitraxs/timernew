@@ -172,6 +172,14 @@
                             FontWeight="SemiBold"
                             HorizontalAlignment="Center"
                             CharacterSpacing="40" />
+                        <TextBlock
+                            Text="{Binding TimerName, Mode=OneWay}"
+                            FontSize="15"
+                            FontWeight="SemiBold"
+                            HorizontalAlignment="Center"
+                            MaxWidth="240"
+                            TextTrimming="CharacterEllipsis"
+                            Visibility="{Binding HasTimerName, Converter={StaticResource BoolToVisibility}}" />
                         <StackPanel
                             Orientation="Horizontal"
                             HorizontalAlignment="Center"
@@ -189,12 +197,19 @@
                             FontSize="12"
                             Opacity="0.5"
                             HorizontalAlignment="Center" />
+                        <TextBlock
+                            Text="{Binding PresetNameText, Mode=OneWay}"
+                            FontSize="13"
+                            FontWeight="SemiBold"
+                            Foreground="{StaticResource AccentBrush}"
+                            HorizontalAlignment="Center"
+                            Visibility="{Binding ShowPresetName, Converter={StaticResource BoolToVisibility}}" />
                     </StackPanel>
                 </Grid>
 
                 <!-- Панель «Время вышло» -->
                 <InfoBar
-                    Title="Время вышло"
+                    Title="{Binding FinishedInfoTitle, Mode=OneWay}"
                     Message="Отсчёт завершён. Нажмите «Сброс» или запустите таймер ещё раз."
                     Severity="Success"
                     IsClosable="False"
@@ -296,6 +311,32 @@
                                 IsEnabled="{Binding CanEditInputs}"
                                 Value="{Binding SecondsInput, Mode=TwoWay}" />
                         </Grid>
+                        <Grid ColumnSpacing="8" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox
+                                x:Name="QuickInputBox"
+                                Grid.Column="0"
+                                Header="Быстрый ввод"
+                                PlaceholderText="Например: 15м чай"
+                                IsEnabled="{Binding CanEditInputs}"
+                                KeyDown="QuickInputBox_KeyDown" />
+                            <Button
+                                Grid.Column="1"
+                                Content="Применить"
+                                CornerRadius="8"
+                                VerticalAlignment="Bottom"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Click="QuickInputButton_Click" />
+                        </Grid>
+                        <TextBlock
+                            Text="{Binding QuickInputFeedback, Mode=OneWay}"
+                            FontSize="12"
+                            Opacity="0.75"
+                            TextWrapping="Wrap"
+                            Visibility="{Binding HasQuickInputFeedback, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock
                             Text="Во время отсчёта и паузы поля ввода заблокированы."
                             FontSize="12"

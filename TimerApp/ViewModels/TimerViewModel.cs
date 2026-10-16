@@ -32,6 +32,9 @@ public sealed class TimerViewModel : ObservableObject
     private bool _isMuted;
     private string _soundId = "alarm";
     private bool _isDarkTheme = true;
+    private string _selectedPresetName = string.Empty;
+    private string _timerName = string.Empty;
+    private string _quickInputFeedback = string.Empty;
 
     public TimerViewModel(
         TimerService timer,
@@ -51,6 +54,8 @@ public sealed class TimerViewModel : ObservableObject
         _isMuted = settings.IsMuted;
         _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
+        _selectedPresetName = settings.LastPresetName ?? string.Empty;
+        _timerName = settings.LastTimerName ?? string.Empty;
 
         foreach (var preset in settings.CustomPresets)
             CustomPresets.Add(preset);
@@ -156,6 +161,10 @@ public sealed class TimerViewModel : ObservableObject
         _ => "Таймер не запущен"
     };
 
+    /// <summary>Заголовок финишной панели: с названием таймера человечнее.</summary>
+    public string FinishedInfoTitle =>
+        HasTimerName ? $"{TimerName} — готово!" : "Время вышло";
+
     /// <summary>Цвет точки-индикатора состояния.</summary>
     public Brush StatusBrush => State switch
     {
@@ -211,9 +220,13 @@ public sealed class TimerViewModel : ObservableObject
     /// </summary>
     public string WindowTitleText => State switch
     {
-        TimerState.Running or TimerState.Paused => $"{DisplayTime} — Таймер",
-        TimerState.Finished => "Время вышло — Таймер",
-        _ => "Таймер"
+        TimerState.Running or TimerState.Paused => HasTimerName
+            ? $"{DisplayTime} — {TimerName}"
+            : $"{DisplayTime} — Таймер",
+        TimerState.Finished => HasTimerName
+            ? $"{TimerName}: время вышло"
+            : "Время вышло — Таймер",
+        _ => HasTimerName ? $"Таймер — {TimerName}" : "Таймер"
     };
 
     /// <summary>Осталось в процентах, например «42%».</summary>
@@ -332,6 +345,84 @@ public sealed class TimerViewModel : ObservableObject
 
     public bool HasCustomPresets => CustomPresets.Count > 0;
 
+    /// <summary>
+    /// Название выбранного пресета (пусто, если длительность набрана вручную
+    /// или правлена после выбора пресета).
+    /// </summary>
+    public string SelectedPresetName
+    {
+        get => _selectedPresetName;
+        private set
+        {
+            if (SetProperty(ref _selectedPresetName, value))
+            {
+                OnPropertyChanged(nameof(HasSelectedPreset));
+                OnPropertyChanged(nameof(PresetNameText));
+                OnPropertyChanged(nameof(ShowPresetName));
+            }
+        }
+    }
+
+    /// <summary>Есть ли выбранный пресет, чьё название надо показывать.</summary>
+    public bool HasSelectedPreset => !string.IsNullOrWhiteSpace(SelectedPresetName);
+
+    /// <summary>Подпись под цифрами, например «Пресет: Работа».</summary>
+    public string PresetNameText => $"Пресет: {SelectedPresetName}";
+
+    /// <summary>
+    /// Подпись пресета скрываем, если название таймера её дословно повторяет
+    /// (свой пресет при применении сам становится названием таймера).
+    /// </summary>
+    public bool ShowPresetName => HasSelectedPreset &&
+        !(HasTimerName &&
+          string.Equals(SelectedPresetName, TimerName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Название текущего таймера из быстрого ввода («15м чай» → «чай»):
+    /// видно под цифрами, в заголовке окна и в уведомлении по окончании.
+    /// </summary>
+    public string TimerName
+    {
+        get => _timerName;
+        private set
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (SetProperty(ref _timerName, normalized))
+            {
+                _settings.LastTimerName = normalized;
+                _settingsService.Save(_settings);
+                OnPropertyChanged(nameof(HasTimerName));
+                OnPropertyChanged(nameof(ShowPresetName));
+                OnPropertyChanged(nameof(WindowTitleText));
+                OnPropertyChanged(nameof(FinishedInfoTitle));
+            }
+        }
+    }
+
+    /// <summary>Задано ли название таймера.</summary>
+    public bool HasTimerName => !string.IsNullOrWhiteSpace(TimerName);
+
+    /// <summary>Подсказка под полем быстрого ввода: что поняли из ввода.</summary>
+    public string QuickInputFeedback
+    {
+        get => _quickInputFeedback;
+        private set
+        {
+            if (SetProperty(ref _quickInputFeedback, value))
+                OnPropertyChanged(nameof(HasQuickInputFeedback));
+        }
+    }
+
+    /// <summary>Показывать ли подсказку быстрого ввода.</summary>
+    public bool HasQuickInputFeedback => !string.IsNullOrWhiteSpace(QuickInputFeedback);
+
+    private void SetSelectedPresetName(string name)
+    {
+        SelectedPresetName = name;
+        _settings.LastPresetName = name;
+        _settingsService.Save(_settings);
+    }
+
     /// <summary>Добавляет пресет из диалога «Свой пресет».</summary>
     public void AddCustomPreset(string name, int totalSeconds)
     {
@@ -375,6 +466,8 @@ public sealed class TimerViewModel : ObservableObject
         _settings.Volume = VolumePercent / 100.0;
         _settings.IsMuted = IsMuted;
         _settings.Theme = IsDarkTheme ? "Dark" : "Light";
+        _settings.LastPresetName = SelectedPresetName;
+        _settings.LastTimerName = TimerName;
         _settings.CustomPresets = new System.Collections.Generic.List<CustomPreset>(CustomPresets);
         _settingsService.Save(_settings);
     }
@@ -444,7 +537,10 @@ public sealed class TimerViewModel : ObservableObject
         if (!int.TryParse(parameter?.ToString(), out int seconds) || seconds <= 0)
             return;
 
-        ApplyDuration(TimeSpan.FromSeconds(seconds));
+        var duration = TimeSpan.FromSeconds(seconds);
+        ApplyDuration(duration);
+        SetSelectedPresetName(TimeFormatter.FormatFriendly(duration));
+        TimerName = string.Empty;
     }
 
     private void ApplyCustomPreset(CustomPreset? preset)
@@ -453,6 +549,46 @@ public sealed class TimerViewModel : ObservableObject
             return;
 
         ApplyDuration(TimeSpan.FromSeconds(preset.TotalSeconds));
+        SetSelectedPresetName(preset.Name);
+
+        // Имя своего пресета — это и есть название таймера: в конце
+        // уведомление скажет, например, «Работа — готово!».
+        TimerName = preset.Name;
+    }
+
+    /// <summary>
+    /// Быстрый ввод одной строкой: «15м чай», «1ч 30м обед», «через 20 минут
+    /// позвонить» или просто «чай» (только название, время не трогаем).
+    /// </summary>
+    public bool ApplyQuickInput(string? text)
+    {
+        if (!CanEditInputs)
+        {
+            QuickInputFeedback = "Во время отсчёта и паузы ввод недоступен.";
+            return false;
+        }
+
+        var result = QuickInputParser.Parse(text);
+        if (!result.Success)
+        {
+            QuickInputFeedback =
+                "Не понял. Примеры: «15м чай», «1ч 30м обед», " +
+                "«через 20 минут позвонить» или просто «чай».";
+            return false;
+        }
+
+        if (result.Duration is { } duration)
+            ApplyDuration(duration);
+
+        // Строка описывает таймер целиком: названия нет — значит, без названия.
+        TimerName = result.Name;
+
+        QuickInputFeedback = result.Duration is { } parsed
+            ? HasTimerName
+                ? $"Принято: {TimeFormatter.FormatFriendly(parsed)} — «{TimerName}»."
+                : $"Принято: {TimeFormatter.FormatFriendly(parsed)}."
+            : $"Название таймера: «{TimerName}».";
+        return true;
     }
 
     private void DeleteCustomPreset(CustomPreset? preset)
@@ -464,6 +600,12 @@ public sealed class TimerViewModel : ObservableObject
         _settings.CustomPresets.Remove(preset);
         _settingsService.Save(_settings);
         OnPropertyChanged(nameof(HasCustomPresets));
+
+        // Удалили как раз тот пресет, что сейчас выбран, — подписи убираем.
+        if (string.Equals(SelectedPresetName, preset.Name, StringComparison.OrdinalIgnoreCase))
+            SetSelectedPresetName(string.Empty);
+        if (string.Equals(TimerName, preset.Name, StringComparison.OrdinalIgnoreCase))
+            TimerName = string.Empty;
     }
 
     /// <summary>«+1 мин» во время отсчёта и паузы.</summary>
@@ -493,6 +635,12 @@ public sealed class TimerViewModel : ObservableObject
 
     private void OnInputDurationChanged()
     {
+        // Любая правка полей ввода означает «время набрано вручную»:
+        // подпись пресета убираем. ApplyPreset/ApplyCustomPreset выставят
+        // название заново уже после ApplyDuration.
+        if (HasSelectedPreset)
+            SetSelectedPresetName(string.Empty);
+
         _settings.LastHours = HoursInput;
         _settings.LastMinutes = MinutesInput;
         _settings.LastSeconds = SecondsInput;
@@ -623,6 +771,7 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowAddMinute));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
+        OnPropertyChanged(nameof(FinishedInfoTitle));
         OnPropertyChanged(nameof(DisplayTime));
         OnPropertyChanged(nameof(WindowTitleText));
         OnPropertyChanged(nameof(EndTimeText));
