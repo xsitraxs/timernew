@@ -355,7 +355,7 @@ public sealed class PhoneRemoteService : IDisposable
         return result;
     }
 
-    private static string GetLocalIPv4()
+    private static string? GetLocalIPv4()
     {
         try
         {
