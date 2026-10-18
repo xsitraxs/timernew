@@ -9,6 +9,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
+using QRCoder;
 using TimerApp.Helpers;
 using TimerApp.Models;
 using TimerApp.Services;
@@ -16,6 +18,7 @@ using TimerApp.ViewModels;
 using Windows.Graphics;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.Storage.Streams;
 using Windows.System;
 
 namespace TimerApp;
@@ -30,10 +33,12 @@ public sealed partial class MainWindow : Window
     private readonly SettingsService _settingsService;
     private readonly TimerService _timerService;
     private readonly SoundService _soundService;
+    private readonly PhoneRemoteService _phoneRemote = new();
     private bool _isCompact;
     private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
     private bool _syncingSoundSelection;
+    private bool _syncingPhaseSoundSelection;
 
     public MainWindow()
     {
@@ -50,9 +55,15 @@ public sealed partial class MainWindow : Window
         ViewModel.TimerFinished += OnTimerFinished;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
 
+        _phoneRemote.CommandReceived += OnPhoneCommand;
+        _phoneRemote.QuickStartReceived += OnPhoneQuickStart;
+        UpdatePhoneState();
+        ApplyPhoneRemote();
+
         ConfigureWindow();
         ApplyTheme(ViewModel.IsDarkTheme);
         SyncSoundComboBoxSelection(ViewModel.SoundId);
+        SyncPhaseSoundComboBoxSelection(ViewModel.PhaseSoundId);
 
         RootGrid.Loaded += (_, _) => RootGrid.Focus(FocusState.Programmatic);
         Closed += OnClosed;
@@ -103,6 +114,12 @@ public sealed partial class MainWindow : Window
         if (e.PropertyName == nameof(TimerViewModel.IsDarkTheme))
             ApplyTheme(ViewModel.IsDarkTheme);
 
+        if (e.PropertyName == nameof(TimerViewModel.PhoneRemoteEnabled))
+            ApplyPhoneRemote();
+
+        // Страница на телефоне опрашивает снимок состояния — держим его свежим.
+        UpdatePhoneState();
+
         // Как только состояние ушло из Finished (старт/сброс/правки) — стоп миганию.
         if (e.PropertyName == nameof(TimerViewModel.WindowTitleText) &&
             !string.Equals(Title, ViewModel.WindowTitleText, StringComparison.Ordinal))
@@ -113,6 +130,114 @@ public sealed partial class MainWindow : Window
 
         if (e.PropertyName == nameof(TimerViewModel.IsFinished) && !ViewModel.IsFinished)
             StopFinishedAnimation();
+    }
+
+    // ------------------------------------------------------- телефонный пульт
+
+    /// <summary>Включает/выключает локальный веб-сервер по тумблеру настроек.</summary>
+    private async void ApplyPhoneRemote()
+    {
+        if (!ViewModel.PhoneRemoteEnabled)
+        {
+            _phoneRemote.Stop();
+            PhoneQrImage.Source = null;
+            return;
+        }
+
+        if (!_phoneRemote.Start())
+        {
+            PhoneUrlText.Text = "Не удалось открыть доступ (порты заняты). Попробуйте перезапустить приложение.";
+            return;
+        }
+
+        PhoneUrlText.Text = _phoneRemote.AccessUrl;
+        await ShowPhoneQrAsync(_phoneRemote.AccessUrl!);
+    }
+
+    private async System.Threading.Tasks.Task ShowPhoneQrAsync(string url)
+    {
+        try
+        {
+            using var generator = new QRCodeGenerator();
+            using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+            var png = new PngByteQRCode(data);
+            byte[] bytes = png.GetGraphic(16);
+
+            using var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+            var bitmap = new BitmapImage();
+            await bitmap.SetSourceAsync(stream);
+            PhoneQrImage.Source = bitmap;
+        }
+        catch (Exception)
+        {
+            // QR не нарисовался — ссылка текстом ниже всё равно работает.
+        }
+    }
+
+    private void OnPhoneCommand(string command)
+    {
+        // Событие приходит из сетевого потока — команды выполняет UI-поток.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            switch (command)
+            {
+                case "start":
+                    if (ViewModel.StartCommand.CanExecute(null)) ViewModel.StartCommand.Execute(null);
+                    break;
+                case "pause":
+                    if (ViewModel.PauseCommand.CanExecute(null)) ViewModel.PauseCommand.Execute(null);
+                    break;
+                case "resume":
+                    if (ViewModel.ResumeCommand.CanExecute(null)) ViewModel.ResumeCommand.Execute(null);
+                    break;
+                case "reset":
+                    ViewModel.ResetCommand.Execute(null);
+                    break;
+                case "add":
+                    if (ViewModel.AddMinuteCommand.CanExecute(null)) ViewModel.AddMinuteCommand.Execute(null);
+                    break;
+                case "skip":
+                    if (ViewModel.SkipPhaseCommand.CanExecute(null)) ViewModel.SkipPhaseCommand.Execute(null);
+                    break;
+                case "interval":
+                    ViewModel.StartIntervalFromPhone();
+                    break;
+            }
+        });
+    }
+
+    private void OnPhoneQuickStart(string text)
+    {
+        DispatcherQueue.TryEnqueue(() => ViewModel.QuickStart(text));
+    }
+
+    /// <summary>Снимок состояния для страницы телефона.</summary>
+    private void UpdatePhoneState()
+    {
+        _phoneRemote.UpdateState(new RemoteStateSnapshot
+        {
+            State = ViewModel.State.ToString(),
+            DisplayTime = ViewModel.DisplayTime,
+            StatusText = ViewModel.StatusText,
+            EndTimeText = ViewModel.EndTimeText,
+            TimerName = ViewModel.TimerName,
+            Progress = ViewModel.Progress,
+            ShowStart = ViewModel.ShowStart,
+            IsRunning = ViewModel.IsRunning,
+            IsPaused = ViewModel.IsPaused,
+            IsFinished = ViewModel.IsFinished,
+            IntervalActive = ViewModel.IsIntervalActive,
+            PhaseName = ViewModel.CurrentIntervalPhaseName,
+            RoundText = ViewModel.IntervalRoundText
+        });
     }
 
     private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
@@ -137,6 +262,8 @@ public sealed partial class MainWindow : Window
         var sectionVisibility = mini ? Visibility.Collapsed : Visibility.Visible;
         InputSection.Visibility = sectionVisibility;
         PresetsSection.Visibility = sectionVisibility;
+        IntervalSection.Visibility = sectionVisibility;
+        PhoneSection.Visibility = sectionVisibility;
         SoundSection.Visibility = sectionVisibility;
         HotkeysHint.Visibility = sectionVisibility;
         MuteTitleButton.Visibility = sectionVisibility;
@@ -165,10 +292,14 @@ public sealed partial class MainWindow : Window
 
     private void OnTimerFinished(object? sender, EventArgs e)
     {
-        // Системное уведомление Windows (с названием таймера, если задано).
+        // Системное уведомление Windows (с названием таймера, если задано;
+        // для интервальной тренировки — просто «Тренировка»).
         string durationText = TimeFormatter.FormatFriendly(_timerService.Duration);
+        string toastName = ViewModel.HasTimerName
+            ? ViewModel.TimerName
+            : ViewModel.IntervalJustFinished ? "Тренировка" : string.Empty;
         if (Application.Current is App app)
-            app.Notifications.ShowTimerFinished(ViewModel.TimerName, durationText);
+            app.Notifications.ShowTimerFinished(toastName, durationText);
 
         // Если окно свёрнуто или не в фокусе — показать его пользователю.
         if (AppWindow.Presenter is OverlappedPresenter presenter &&
@@ -255,6 +386,41 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private void SyncPhaseSoundComboBoxSelection(string soundId)
+    {
+        _syncingPhaseSoundSelection = true;
+        try
+        {
+            foreach (var obj in PhaseSoundComboBox.Items)
+            {
+                if (obj is ComboBoxItem item &&
+                    string.Equals(item.Tag as string, soundId, StringComparison.OrdinalIgnoreCase))
+                {
+                    PhaseSoundComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _syncingPhaseSoundSelection = false;
+        }
+    }
+
+    private void PhaseSoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingPhaseSoundSelection)
+            return;
+
+        if (PhaseSoundComboBox.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not string soundId)
+        {
+            return;
+        }
+
+        ViewModel.PhaseSoundId = soundId;
+    }
+
     private async void SoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_syncingSoundSelection)
@@ -308,18 +474,42 @@ public sealed partial class MainWindow : Window
         string targetName = "custom-sound" + file.FileType;
         string folderPath = _settingsService.GetCustomSoundFolderPath();
 
+        bool copied;
         try
         {
             var folder = await StorageFolder.GetFolderFromPathAsync(folderPath);
             await file.CopyAsync(folder, targetName, NameCollisionOption.ReplaceExisting);
+            copied = true;
         }
         catch (Exception)
         {
-            // Резервный путь обычным копированием файла.
-            if (!string.IsNullOrWhiteSpace(file.Path))
-                File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
-            else
-                throw;
+            copied = false;
+        }
+
+        if (!copied)
+        {
+            // Резервный путь обычным копированием файла. Метод зовётся из
+            // async void обработчиков, поэтому сбои наружу не пробрасываем:
+            // необработанное исключение там роняет всё приложение.
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(file.Path))
+                {
+                    File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
+                    copied = true;
+                }
+            }
+            catch (Exception)
+            {
+                copied = false;
+            }
+        }
+
+        if (!copied)
+        {
+            // Не вышло: оставляем текущую мелодию и честно возвращаем выбор.
+            SyncSoundComboBoxSelection(ViewModel.SoundId);
+            return;
         }
 
         ViewModel.SetCustomSoundFile(targetName);
@@ -429,7 +619,7 @@ public sealed partial class MainWindow : Window
         // Не перехватываем клавиши, когда пользователь печатает в полях ввода
         // или когда фокус на кнопке (пробел тогда нажмёт саму кнопку —
         // это стандартное поведение Windows).
-        if (e.OriginalSource is TextBox or NumberBox)
+        if (e.OriginalSource is TextBox or NumberBox or ComboBox)
             return;
 
         switch (e.Key)
@@ -469,6 +659,9 @@ public sealed partial class MainWindow : Window
         ViewModel.PersistAll();
         ViewModel.TimerFinished -= OnTimerFinished;
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _phoneRemote.CommandReceived -= OnPhoneCommand;
+        _phoneRemote.QuickStartReceived -= OnPhoneQuickStart;
+        _phoneRemote.Dispose();
         _timerService.Dispose();
         _soundService.Dispose();
     }

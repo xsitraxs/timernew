@@ -31,10 +31,24 @@ public sealed class TimerViewModel : ObservableObject
     private double _volumePercent = 70;
     private bool _isMuted;
     private string _soundId = "alarm";
+    private string _phaseSoundId = "beep";
     private bool _isDarkTheme = true;
     private string _selectedPresetName = string.Empty;
     private string _timerName = string.Empty;
     private string _quickInputFeedback = string.Empty;
+    private bool _useIntervalMode;
+    private string _intervalWorkName = "Бег";
+    private string _intervalRestName = "Ходьба";
+    private double _intervalWorkMinutes = 1;
+    private double _intervalWorkSecondsPart = 30;
+    private double _intervalRestMinutes = 2;
+    private double _intervalRestSecondsPart;
+    private double _intervalRoundsInput = 10;
+    private bool _intervalActive;
+    private int _intervalPhase;
+    private int _intervalRound = 1;
+    private bool _intervalJustFinished;
+    private bool _phoneRemoteEnabled;
 
     public TimerViewModel(
         TimerService timer,
@@ -53,31 +67,56 @@ public sealed class TimerViewModel : ObservableObject
         _volumePercent = Math.Clamp(settings.Volume, 0, 1) * 100;
         _isMuted = settings.IsMuted;
         _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
+        _phaseSoundId = string.IsNullOrWhiteSpace(settings.PhaseSoundId) ? "beep" : settings.PhaseSoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
         _selectedPresetName = settings.LastPresetName ?? string.Empty;
         _timerName = settings.LastTimerName ?? string.Empty;
+        _useIntervalMode = settings.IntervalModeEnabled;
+        _intervalWorkName = string.IsNullOrWhiteSpace(settings.IntervalWorkName)
+            ? "Бег"
+            : settings.IntervalWorkName;
+        _intervalRestName = string.IsNullOrWhiteSpace(settings.IntervalRestName)
+            ? "Ходьба"
+            : settings.IntervalRestName;
+        int workTotalSeconds = Math.Max(0, (int)Math.Round(settings.IntervalWorkSeconds));
+        int restTotalSeconds = Math.Max(0, (int)Math.Round(settings.IntervalRestSeconds));
+        _intervalWorkMinutes = Math.Clamp(workTotalSeconds / 60, 0, 600);
+        _intervalWorkSecondsPart = Math.Clamp(workTotalSeconds % 60, 0, 59);
+        _intervalRestMinutes = Math.Clamp(restTotalSeconds / 60, 0, 600);
+        _intervalRestSecondsPart = Math.Clamp(restTotalSeconds % 60, 0, 59);
+        _intervalRoundsInput = Math.Clamp(settings.IntervalRounds, 0, 999);
+        _phoneRemoteEnabled = settings.PhoneRemoteEnabled;
 
         foreach (var preset in settings.CustomPresets)
             CustomPresets.Add(preset);
 
-        _remaining = InputDuration;
-        _timer.SetDuration(InputDuration);
+        var initialDuration = _useIntervalMode && IntervalWorkDuration > TimeSpan.Zero
+            ? IntervalWorkDuration
+            : InputDuration;
+        _remaining = initialDuration;
+        _timer.SetDuration(initialDuration);
         _sound.ApplyVolume(_volumePercent / 100.0, _isMuted);
         _sound.SetSound(_soundId, _settingsService.GetCustomSoundFilePath(settings));
+        _sound.SetPhaseSound(_phaseSoundId);
 
         _timer.Ticked += OnTimerTicked;
         _timer.StateChanged += OnTimerStateChanged;
         _timer.Completed += OnTimerCompleted;
 
-        StartCommand = new RelayCommand(Start, () => (IsIdle || IsFinished) && InputDuration > TimeSpan.Zero);
+        StartCommand = new RelayCommand(Start, () =>
+            (IsIdle || IsFinished) &&
+            (UseIntervalMode ? IntervalWorkDuration > TimeSpan.Zero : InputDuration > TimeSpan.Zero));
         PauseCommand = new RelayCommand(Pause, () => IsRunning);
         ResumeCommand = new RelayCommand(Resume, () => IsPaused);
         ResetCommand = new RelayCommand(Reset);
         ToggleStartPauseCommand = new RelayCommand(ToggleStartPause);
         ApplyPresetCommand = new RelayCommand<object?>(ApplyPreset);
         ApplyCustomPresetCommand = new RelayCommand<CustomPreset>(ApplyCustomPreset);
+        ApplyIntervalProgramCommand = new RelayCommand<string?>(ApplyIntervalProgram);
         DeleteCustomPresetCommand = new RelayCommand<CustomPreset>(DeleteCustomPreset);
         AddMinuteCommand = new RelayCommand(AddMinute, () => IsRunning || IsPaused);
+        SkipPhaseCommand = new RelayCommand(SkipPhase, () =>
+            _intervalActive && (IsRunning || IsPaused) && HasNextIntervalPhase);
         ToggleMuteCommand = new RelayCommand(ToggleMute);
         PreviewSoundCommand = new RelayCommand(() => _sound.PlayPreview());
 
@@ -153,17 +192,26 @@ public sealed class TimerViewModel : ObservableObject
     public bool IsFinished => State == TimerState.Finished;
 
     /// <summary>Русская подпись состояния под кольцом и в pill-индикаторе.</summary>
-    public string StatusText => State switch
-    {
-        TimerState.Running => "Идёт отсчёт",
-        TimerState.Paused => "Пауза",
-        TimerState.Finished => "Время вышло",
-        _ => "Таймер не запущен"
-    };
+    public string StatusText => _intervalActive
+        ? State switch
+        {
+            TimerState.Running => $"{CurrentIntervalPhaseName} · круг {IntervalRoundText}",
+            TimerState.Paused => $"Пауза · {CurrentIntervalPhaseName} · круг {IntervalRoundText}",
+            TimerState.Finished => "Тренировка завершена",
+            _ => "Интервалы готовы"
+        }
+        : State switch
+        {
+            TimerState.Running => "Идёт отсчёт",
+            TimerState.Paused => "Пауза",
+            TimerState.Finished => "Время вышло",
+            _ => "Таймер не запущен"
+        };
 
     /// <summary>Заголовок финишной панели: с названием таймера человечнее.</summary>
-    public string FinishedInfoTitle =>
-        HasTimerName ? $"{TimerName} — готово!" : "Время вышло";
+    public string FinishedInfoTitle => _intervalJustFinished
+        ? "Тренировка завершена!"
+        : HasTimerName ? $"{TimerName} — готово!" : "Время вышло";
 
     /// <summary>Цвет точки-индикатора состояния.</summary>
     public Brush StatusBrush => State switch
@@ -220,12 +268,16 @@ public sealed class TimerViewModel : ObservableObject
     /// </summary>
     public string WindowTitleText => State switch
     {
-        TimerState.Running or TimerState.Paused => HasTimerName
-            ? $"{DisplayTime} — {TimerName}"
-            : $"{DisplayTime} — Таймер",
-        TimerState.Finished => HasTimerName
-            ? $"{TimerName}: время вышло"
-            : "Время вышло — Таймер",
+        TimerState.Running or TimerState.Paused => _intervalActive
+            ? $"{DisplayTime} — {CurrentIntervalPhaseName} · круг {IntervalRoundText}"
+            : HasTimerName
+                ? $"{DisplayTime} — {TimerName}"
+                : $"{DisplayTime} — Таймер",
+        TimerState.Finished => _intervalJustFinished
+            ? "Тренировка завершена — Таймер"
+            : HasTimerName
+                ? $"{TimerName}: время вышло"
+                : "Время вышло — Таймер",
         _ => HasTimerName ? $"Таймер — {TimerName}" : "Таймер"
     };
 
@@ -236,16 +288,31 @@ public sealed class TimerViewModel : ObservableObject
     /// Спокойная информационная строка под цифрами: во сколько закончится,
     /// какая длительность задана и т.п.
     /// </summary>
-    public string EndTimeText => State switch
-    {
-        TimerState.Running =>
-            "закончится в " + _timer.EndTimeUtc.ToLocalTime().ToString("HH:mm"),
-        TimerState.Paused => "отсчёт приостановлен",
-        TimerState.Finished => "заданное время вышло",
-        _ => InputDuration > TimeSpan.Zero
-            ? "длительность " + TimeFormatter.FormatFriendly(InputDuration)
-            : "задайте длительность"
-    };
+    public string EndTimeText => _intervalActive
+        ? State switch
+        {
+            TimerState.Running => HasFiniteIntervalRounds
+                ? "этап до " + _timer.EndTimeUtc.ToLocalTime().ToString("HH:mm") +
+                  " · всего осталось " + TimeFormatter.FormatFriendly(IntervalTotalRemaining())
+                : "этап до " + _timer.EndTimeUtc.ToLocalTime().ToString("HH:mm") + " · круги без конца",
+            TimerState.Paused => HasFiniteIntervalRounds
+                ? "пауза · всего осталось " + TimeFormatter.FormatFriendly(IntervalTotalRemaining())
+                : "пауза · круги без конца",
+            TimerState.Finished => "тренировка завершена",
+            _ => IntervalCycleText
+        }
+        : State switch
+        {
+            TimerState.Running =>
+                "закончится в " + _timer.EndTimeUtc.ToLocalTime().ToString("HH:mm"),
+            TimerState.Paused => "отсчёт приостановлен",
+            TimerState.Finished => "заданное время вышло",
+            _ => UseIntervalMode
+                ? IntervalCycleText
+                : InputDuration > TimeSpan.Zero
+                    ? "длительность " + TimeFormatter.FormatFriendly(InputDuration)
+                    : "задайте длительность"
+        };
 
     // ------------------------------------------------------------------ звук
 
@@ -302,6 +369,21 @@ public sealed class TimerViewModel : ObservableObject
         }
     }
 
+    /// <summary>Мелодия короткого сигнала смены этапа: alarm, chime, beep или gentle.</summary>
+    public string PhaseSoundId
+    {
+        get => _phaseSoundId;
+        set
+        {
+            if (SetProperty(ref _phaseSoundId, value))
+            {
+                _settings.PhaseSoundId = value;
+                _sound.SetPhaseSound(value);
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
     /// <summary>Выбран ли пользовательский файл звука.</summary>
     public bool HasCustomSound => !string.IsNullOrWhiteSpace(_settings.CustomSoundFileName);
 
@@ -333,6 +415,23 @@ public sealed class TimerViewModel : ObservableObject
             if (SetProperty(ref _isDarkTheme, value))
             {
                 _settings.Theme = value ? "Dark" : "Light";
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Управление с телефона по домашней Wi-Fi сети: окно по этой настройке
+    /// поднимает/гасит локальный веб-сервер с QR-кодом.
+    /// </summary>
+    public bool PhoneRemoteEnabled
+    {
+        get => _phoneRemoteEnabled;
+        set
+        {
+            if (SetProperty(ref _phoneRemoteEnabled, value))
+            {
+                _settings.PhoneRemoteEnabled = value;
                 _settingsService.Save(_settings);
             }
         }
@@ -416,6 +515,262 @@ public sealed class TimerViewModel : ObservableObject
     /// <summary>Показывать ли подсказку быстрого ввода.</summary>
     public bool HasQuickInputFeedback => !string.IsNullOrWhiteSpace(QuickInputFeedback);
 
+    // --------------------------------------------------------------- интервалы
+
+    /// <summary>
+    /// Интервальный режим двух этапов (бег/ходьба, работа/отдых): этапы сами
+    /// чередуются по кругу, нажимать ничего не нужно.
+    /// </summary>
+    public bool UseIntervalMode
+    {
+        get => _useIntervalMode;
+        set
+        {
+            if (SetProperty(ref _useIntervalMode, value))
+            {
+                _settings.IntervalModeEnabled = value;
+                _settingsService.Save(_settings);
+                SyncIdleDurationDisplay();
+                RefreshStateProperties();
+            }
+        }
+    }
+
+    /// <summary>Название первого этапа (по умолчанию «Бег»).</summary>
+    public string IntervalWorkName
+    {
+        get => _intervalWorkName;
+        set
+        {
+            if (SetProperty(ref _intervalWorkName, value ?? string.Empty))
+            {
+                _settings.IntervalWorkName = _intervalWorkName;
+                _settingsService.Save(_settings);
+                OnPropertyChanged(nameof(CurrentIntervalPhaseName));
+                OnPropertyChanged(nameof(IntervalCycleText));
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(WindowTitleText));
+            }
+        }
+    }
+
+    /// <summary>Название второго этапа (по умолчанию «Ходьба»).</summary>
+    public string IntervalRestName
+    {
+        get => _intervalRestName;
+        set
+        {
+            if (SetProperty(ref _intervalRestName, value ?? string.Empty))
+            {
+                _settings.IntervalRestName = _intervalRestName;
+                _settingsService.Save(_settings);
+                OnPropertyChanged(nameof(CurrentIntervalPhaseName));
+                OnPropertyChanged(nameof(IntervalCycleText));
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(WindowTitleText));
+            }
+        }
+    }
+
+    public double IntervalWorkMinutes
+    {
+        get => _intervalWorkMinutes;
+        set
+        {
+            if (SetProperty(ref _intervalWorkMinutes, SanitizeInput(value, 600)))
+                OnIntervalInputsChanged();
+        }
+    }
+
+    public double IntervalWorkSecondsPart
+    {
+        get => _intervalWorkSecondsPart;
+        set
+        {
+            if (SetProperty(ref _intervalWorkSecondsPart, SanitizeInput(value, 59)))
+                OnIntervalInputsChanged();
+        }
+    }
+
+    public double IntervalRestMinutes
+    {
+        get => _intervalRestMinutes;
+        set
+        {
+            if (SetProperty(ref _intervalRestMinutes, SanitizeInput(value, 600)))
+                OnIntervalInputsChanged();
+        }
+    }
+
+    public double IntervalRestSecondsPart
+    {
+        get => _intervalRestSecondsPart;
+        set
+        {
+            if (SetProperty(ref _intervalRestSecondsPart, SanitizeInput(value, 59)))
+                OnIntervalInputsChanged();
+        }
+    }
+
+    /// <summary>Кругов в интервальном режиме. 0 — бесконечно.</summary>
+    public double IntervalRoundsInput
+    {
+        get => _intervalRoundsInput;
+        set
+        {
+            if (SetProperty(ref _intervalRoundsInput, SanitizeInput(value, 999)))
+            {
+                _settings.IntervalRounds = IntervalRounds;
+                _settingsService.Save(_settings);
+                OnPropertyChanged(nameof(IntervalRounds));
+                OnPropertyChanged(nameof(HasFiniteIntervalRounds));
+                OnPropertyChanged(nameof(IntervalRoundText));
+                OnPropertyChanged(nameof(EndTimeText));
+                (SkipPhaseCommand as RelayCommand)?.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    /// <summary>Длительность первого этапа из полей ввода.</summary>
+    public TimeSpan IntervalWorkDuration =>
+        TimeSpan.FromMinutes(_intervalWorkMinutes) + TimeSpan.FromSeconds(_intervalWorkSecondsPart);
+
+    /// <summary>Длительность второго этапа из полей ввода.</summary>
+    public TimeSpan IntervalRestDuration =>
+        TimeSpan.FromMinutes(_intervalRestMinutes) + TimeSpan.FromSeconds(_intervalRestSecondsPart);
+
+    /// <summary>Кругов задано (0 = бесконечно).</summary>
+    public int IntervalRounds => (int)Math.Round(Math.Clamp(_intervalRoundsInput, 0, 999));
+
+    /// <summary>Круги ограничены, а не бесконечные.</summary>
+    public bool HasFiniteIntervalRounds => IntervalRounds > 0;
+
+    /// <summary>Интервальная тренировка прямо сейчас идёт (или на паузе).</summary>
+    public bool IsIntervalActive => _intervalActive;
+
+    /// <summary>Последний завершённый отсчёт был интервальной тренировкой.</summary>
+    public bool IntervalJustFinished => _intervalJustFinished;
+
+    /// <summary>Отображаемое имя этапа: пустое поле ввода — «Этап 1»/«Этап 2».</summary>
+    private string PhaseDisplayName(int phase) => phase == 0
+        ? string.IsNullOrWhiteSpace(_intervalWorkName) ? "Этап 1" : _intervalWorkName.Trim()
+        : string.IsNullOrWhiteSpace(_intervalRestName) ? "Этап 2" : _intervalRestName.Trim();
+
+    /// <summary>Имя текущего этапа тренировки.</summary>
+    public string CurrentIntervalPhaseName => PhaseDisplayName(_intervalPhase);
+
+    /// <summary>Длительность текущего этапа.</summary>
+    private TimeSpan CurrentIntervalPhaseDuration =>
+        _intervalPhase == 0 ? IntervalWorkDuration : IntervalRestDuration;
+
+    /// <summary>«3 из 10» или «3 · без конца».</summary>
+    public string IntervalRoundText => HasFiniteIntervalRounds
+        ? $"{_intervalRound} из {IntervalRounds}"
+        : $"{_intervalRound} · без конца";
+
+    /// <summary>Кнопка «Следующий этап» видна во время интервальной тренировки.</summary>
+    public bool ShowSkipPhase => _intervalActive && (IsRunning || IsPaused);
+
+    /// <summary>Есть ли этап после текущего (на последнем круге первого этапа — нет).</summary>
+    public bool HasNextIntervalPhase
+    {
+        get
+        {
+            if (!_intervalActive)
+                return false;
+
+            if (_intervalPhase == 1)
+                return true; // после второго этапа всегда идёт первый следующего круга
+
+            // Первый этап: конец только на последнем круге конечной программы.
+            return !HasFiniteIntervalRounds || _intervalRound < IntervalRounds;
+        }
+    }
+
+    /// <summary>Короткое описание цикла для строки под цифрами.</summary>
+    public string IntervalCycleText => IntervalWorkDuration > TimeSpan.Zero
+        ? $"цикл: {PhaseDisplayName(0)} {TimeFormatter.FormatFriendly(IntervalWorkDuration)}" +
+          $" + {PhaseDisplayName(1)} {TimeFormatter.FormatFriendly(IntervalRestDuration)}" +
+          (HasFiniteIntervalRounds ? $" · кругов: {IntervalRounds}" : " · бесконечно")
+        : "настройте длительность первого этапа";
+
+    /// <summary>Сколько всего осталось до конца конечной интервальной программы.</summary>
+    private TimeSpan IntervalTotalRemaining()
+    {
+        double total = Math.Max(0, _timer.Remaining.TotalSeconds);
+        if (!HasFiniteIntervalRounds)
+            return TimeSpan.FromSeconds(total);
+
+        double work = IntervalWorkDuration.TotalSeconds;
+        double rest = IntervalRestDuration.TotalSeconds;
+        int roundsLeft = Math.Max(0, IntervalRounds - _intervalRound);
+
+        if (_intervalPhase == 0)
+        {
+            // После текущего первого этапа: второй этап этого круга (если круг
+            // не последний), первые этапы оставшихся кругов и их вторые этапы —
+            // кроме самого последнего круга, где второго этапа уже нет.
+            total += (_intervalRound < IntervalRounds ? rest : 0)
+                     + roundsLeft * work
+                     + Math.Max(0, roundsLeft - 1) * rest;
+        }
+        else
+        {
+            // После текущего второго этапа: оставшиеся круги; у последнего
+            // круга второго этапа уже нет.
+            total += roundsLeft * work + Math.Max(0, roundsLeft - 1) * rest;
+        }
+
+        return TimeSpan.FromSeconds(Math.Max(0, total));
+    }
+
+    private void OnIntervalInputsChanged()
+    {
+        _settings.IntervalWorkSeconds = IntervalWorkDuration.TotalSeconds;
+        _settings.IntervalRestSeconds = IntervalRestDuration.TotalSeconds;
+        _settingsService.Save(_settings);
+        OnPropertyChanged(nameof(IntervalWorkDuration));
+        OnPropertyChanged(nameof(IntervalRestDuration));
+        OnPropertyChanged(nameof(IntervalCycleText));
+        OnPropertyChanged(nameof(EndTimeText));
+        SyncIdleDurationDisplay();
+        (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>
+    /// В ожидании крупные цифры показывают то, что запустит кнопка «Старт»:
+    /// в интервальном режиме — первый этап, в обычном — набранную длительность.
+    /// </summary>
+    private void SyncIdleDurationDisplay()
+    {
+        if (!CanEditInputs)
+            return;
+
+        TimeSpan display = UseIntervalMode && IntervalWorkDuration > TimeSpan.Zero
+            ? IntervalWorkDuration
+            : InputDuration;
+        _sound.StopAlarm();
+        _timer.SetDuration(display);
+        Remaining = display;
+        Progress = display > TimeSpan.Zero ? 1.0 : 0.0;
+        OnPropertyChanged(nameof(EndTimeText));
+        (StartCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshIntervalProperties()
+    {
+        OnPropertyChanged(nameof(IsIntervalActive));
+        OnPropertyChanged(nameof(IntervalJustFinished));
+        OnPropertyChanged(nameof(CurrentIntervalPhaseName));
+        OnPropertyChanged(nameof(IntervalRoundText));
+        OnPropertyChanged(nameof(ShowSkipPhase));
+        OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(FinishedInfoTitle));
+        OnPropertyChanged(nameof(WindowTitleText));
+        OnPropertyChanged(nameof(EndTimeText));
+        (SkipPhaseCommand as RelayCommand)?.NotifyCanExecuteChanged();
+    }
+
     private void SetSelectedPresetName(string name)
     {
         SelectedPresetName = name;
@@ -454,6 +809,8 @@ public sealed class TimerViewModel : ObservableObject
     public ICommand ApplyCustomPresetCommand { get; }
     public ICommand DeleteCustomPresetCommand { get; }
     public ICommand AddMinuteCommand { get; }
+    public ICommand SkipPhaseCommand { get; }
+    public ICommand ApplyIntervalProgramCommand { get; }
     public ICommand ToggleMuteCommand { get; }
     public ICommand PreviewSoundCommand { get; }
 
@@ -468,6 +825,12 @@ public sealed class TimerViewModel : ObservableObject
         _settings.Theme = IsDarkTheme ? "Dark" : "Light";
         _settings.LastPresetName = SelectedPresetName;
         _settings.LastTimerName = TimerName;
+        _settings.IntervalModeEnabled = UseIntervalMode;
+        _settings.IntervalWorkName = IntervalWorkName;
+        _settings.IntervalRestName = IntervalRestName;
+        _settings.IntervalWorkSeconds = IntervalWorkDuration.TotalSeconds;
+        _settings.IntervalRestSeconds = IntervalRestDuration.TotalSeconds;
+        _settings.IntervalRounds = IntervalRounds;
         _settings.CustomPresets = new System.Collections.Generic.List<CustomPreset>(CustomPresets);
         _settingsService.Save(_settings);
     }
@@ -476,6 +839,16 @@ public sealed class TimerViewModel : ObservableObject
 
     private void Start()
     {
+        _intervalJustFinished = false;
+
+        if (UseIntervalMode)
+        {
+            StartInterval();
+            return;
+        }
+
+        _intervalActive = false;
+
         TimeSpan duration = InputDuration;
         if (duration <= TimeSpan.Zero)
             return;
@@ -483,6 +856,129 @@ public sealed class TimerViewModel : ObservableObject
         _sound.StopAlarm();
         _timer.Start(duration);
         PersistTimerSession();
+    }
+
+    /// <summary>Старт интервальной тренировки: первый этап, первый круг.</summary>
+    private void StartInterval()
+    {
+        if (IntervalWorkDuration <= TimeSpan.Zero)
+            return;
+
+        _sound.StopAlarm();
+        _intervalActive = true;
+        _intervalPhase = 0;
+        _intervalRound = 1;
+        _timer.Start(IntervalWorkDuration);
+        PersistTimerSession();
+        RefreshIntervalProperties();
+    }
+
+    /// <summary>Кнопка «Следующий этап»: сразу перейти дальше по программе.</summary>
+    private void SkipPhase()
+    {
+        if (!_intervalActive || !(IsRunning || IsPaused) || !HasNextIntervalPhase)
+            return;
+
+        bool wasPaused = IsPaused;
+        if (!TryAdvanceIntervalPhase())
+            return;
+
+        // Пропуск с паузы не должен сам запускать отсчёт.
+        if (wasPaused)
+        {
+            _timer.Pause();
+            PersistTimerSession();
+        }
+
+        _sound.PlayPhaseCue();
+        RefreshIntervalProperties();
+    }
+
+    /// <summary>
+    /// Готовая программа одним нажатием: заполняет этапы, круги
+    /// и включает режим тренировки. Запускать нужно кнопкой «Старт».
+    /// </summary>
+    private void ApplyIntervalProgram(string? key)
+    {
+        if (!(IsIdle || IsFinished))
+            return;
+
+        (string workName, int workSeconds, string restName, int restSeconds, int rounds) = key switch
+        {
+            "tabata" => ("Работа", 20, "Отдых", 10, 8),
+            "runbeginner" => ("Бег", 60, "Ходьба", 120, 10),
+            "runinterval" => ("Бег", 90, "Ходьба", 120, 10),
+            "hiit" => ("Работа", 40, "Отдых", 20, 12),
+            "pomodoro" => ("Фокус", 1500, "Отдых", 300, 4),
+            _ => ("", 0, "", 0, 0)
+        };
+
+        if (workSeconds <= 0)
+            return;
+
+        IntervalWorkName = workName;
+        IntervalRestName = restName;
+        IntervalWorkMinutes = workSeconds / 60;
+        IntervalWorkSecondsPart = workSeconds % 60;
+        IntervalRestMinutes = restSeconds / 60;
+        IntervalRestSecondsPart = restSeconds % 60;
+        IntervalRoundsInput = rounds;
+
+        if (!UseIntervalMode)
+            UseIntervalMode = true;
+    }
+
+    /// <summary>Кнопка «Старт тренировки» на странице телефона.</summary>
+    public bool StartIntervalFromPhone()
+    {
+        if (!(IsIdle || IsFinished))
+            return false;
+
+        if (!UseIntervalMode)
+            UseIntervalMode = true;
+
+        Start();
+        return IsRunning;
+    }
+
+    /// <summary>
+    /// Переход к следующему этапу программы. Возвращает false, если программа
+    /// закончилась (текущий этап был последним) — тогда вызывающий код делает
+    /// обычный финиш с будильником и уведомлением.
+    /// </summary>
+    private bool TryAdvanceIntervalPhase()
+    {
+        if (!_intervalActive)
+            return false;
+
+        if (_intervalPhase == 0)
+        {
+            // Первый этап последнего круга — дальше только финиш.
+            if (HasFiniteIntervalRounds && _intervalRound >= IntervalRounds)
+                return false;
+
+            if (IntervalRestDuration > TimeSpan.Zero)
+            {
+                _intervalPhase = 1;
+                _timer.Start(IntervalRestDuration);
+            }
+            else
+            {
+                // Второй этап нулевой — сразу следующий круг.
+                _intervalPhase = 0;
+                _intervalRound++;
+                _timer.Start(IntervalWorkDuration);
+            }
+        }
+        else
+        {
+            _intervalPhase = 0;
+            _intervalRound++;
+            _timer.Start(IntervalWorkDuration);
+        }
+
+        PersistTimerSession();
+        return true;
     }
 
     private void Pause()
@@ -501,11 +997,19 @@ public sealed class TimerViewModel : ObservableObject
     private void Reset()
     {
         _sound.StopAlarm();
+        _intervalActive = false;
+        _intervalJustFinished = false;
         _timer.Reset();
-        _timer.SetDuration(InputDuration);
-        Remaining = InputDuration;
-        Progress = 1.0;
+
+        // Цифры возвращаются к тому, что запустит «Старт» в текущем режиме.
+        TimeSpan display = UseIntervalMode && IntervalWorkDuration > TimeSpan.Zero
+            ? IntervalWorkDuration
+            : InputDuration;
+        _timer.SetDuration(display);
+        Remaining = display;
+        Progress = display > TimeSpan.Zero ? 1.0 : 0.0;
         PersistTimerSession();
+        RefreshIntervalProperties();
     }
 
     /// <summary>Пробел: старт / пауза / продолжить в зависимости от состояния.</summary>
@@ -591,6 +1095,22 @@ public sealed class TimerViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Быстрый запуск одной строкой — для кнопки на странице телефона:
+    /// разобрать «15м чай» и сразу стартовать. Если что-то уже идёт,
+    /// ничего не трогаем.
+    /// </summary>
+    public bool QuickStart(string? text)
+    {
+        if (!ApplyQuickInput(text))
+            return false;
+
+        if (IsIdle || IsFinished)
+            Start();
+
+        return true;
+    }
+
     private void DeleteCustomPreset(CustomPreset? preset)
     {
         if (preset is null)
@@ -652,22 +1172,37 @@ public sealed class TimerViewModel : ObservableObject
 
         if (CanEditInputs)
         {
-            // Правка длительности после финиша также глушит сигнал.
+            // Правка длительности после финиша также глушит сигнал. В
+            // интервальном режиме на цифрах — первый этап, а не обычный ввод.
             _sound.StopAlarm();
-            _timer.SetDuration(InputDuration);
-            Remaining = InputDuration;
-            Progress = InputDuration > TimeSpan.Zero ? 1.0 : 0.0;
+            TimeSpan display = UseIntervalMode && IntervalWorkDuration > TimeSpan.Zero
+                ? IntervalWorkDuration
+                : InputDuration;
+            _timer.SetDuration(display);
+            Remaining = display;
+            Progress = display > TimeSpan.Zero ? 1.0 : 0.0;
         }
     }
 
     private void OnTimerTicked(object? sender, EventArgs e)
     {
+        double previousSeconds = _remaining.TotalSeconds;
+
         OnPropertyChanged(nameof(EndTimeText));
         OnPropertyChanged(nameof(StatusBrush));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
             : 0;
+
+        // Предсигнал за 3 секунды до конца этапа тренировки: тот же
+        // короткий сигнал, но тише — «приготовься к смене этапа».
+        if (_intervalActive && _timer.State == TimerState.Running)
+        {
+            double nowSeconds = _timer.Remaining.TotalSeconds;
+            if (previousSeconds > 3.0 && nowSeconds <= 3.0 && nowSeconds > 0)
+                _sound.PlayPhaseWarning();
+        }
     }
 
     private void OnTimerStateChanged(object? sender, EventArgs e)
@@ -680,8 +1215,22 @@ public sealed class TimerViewModel : ObservableObject
     {
         Remaining = TimeSpan.Zero;
         Progress = 0;
+
+        // Этап тренировки закончился, но программа ещё нет: короткий сигнал
+        // и сразу следующий этап — без будильника на 35 секунд и без тоста.
+        if (_intervalActive && TryAdvanceIntervalPhase())
+        {
+            _sound.PlayPhaseCue();
+            RefreshIntervalProperties();
+            return;
+        }
+
+        bool wasInterval = _intervalActive;
+        _intervalActive = false;
+        _intervalJustFinished = wasInterval;
         PersistTimerSession();
         _sound.PlayAlarm();
+        RefreshIntervalProperties();
         TimerFinished?.Invoke(this, EventArgs.Empty);
     }
 
@@ -693,11 +1242,31 @@ public sealed class TimerViewModel : ObservableObject
     {
         switch (_timer.State)
         {
+            case TimerState.Running when _intervalActive:
+                _settings.SavedTimerState = "IntervalRunning";
+                _settings.SavedTimerEndUtcTicks = _timer.EndTimeUtc.UtcTicks;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                _settings.SavedIntervalPhase = _intervalPhase;
+                _settings.SavedIntervalRound = _intervalRound;
+                break;
+
+            case TimerState.Paused when _intervalActive:
+                _settings.SavedTimerState = "IntervalPaused";
+                _settings.SavedTimerEndUtcTicks = 0;
+                _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
+                _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                _settings.SavedIntervalPhase = _intervalPhase;
+                _settings.SavedIntervalRound = _intervalRound;
+                break;
+
             case TimerState.Running:
                 _settings.SavedTimerState = "Running";
                 _settings.SavedTimerEndUtcTicks = _timer.EndTimeUtc.UtcTicks;
                 _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
                 _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                _settings.SavedIntervalPhase = 0;
+                _settings.SavedIntervalRound = 0;
                 break;
 
             case TimerState.Paused:
@@ -705,6 +1274,8 @@ public sealed class TimerViewModel : ObservableObject
                 _settings.SavedTimerEndUtcTicks = 0;
                 _settings.SavedTimerDurationSeconds = _timer.Duration.TotalSeconds;
                 _settings.SavedTimerRemainingSeconds = _timer.Remaining.TotalSeconds;
+                _settings.SavedIntervalPhase = 0;
+                _settings.SavedIntervalRound = 0;
                 break;
 
             default:
@@ -712,6 +1283,8 @@ public sealed class TimerViewModel : ObservableObject
                 _settings.SavedTimerEndUtcTicks = 0;
                 _settings.SavedTimerDurationSeconds = 0;
                 _settings.SavedTimerRemainingSeconds = 0;
+                _settings.SavedIntervalPhase = 0;
+                _settings.SavedIntervalRound = 0;
                 break;
         }
 
@@ -726,6 +1299,54 @@ public sealed class TimerViewModel : ObservableObject
             var duration = TimeSpan.FromSeconds(_settings.SavedTimerDurationSeconds);
             if (duration <= TimeSpan.Zero)
                 return;
+
+            // Интервальная тренировка восстанавливается в свой режим: этап и
+            // круг сохранены отдельно, а время этапа — общим механизмом.
+            bool intervalRunning = _settings.SavedTimerEndUtcTicks > 0 && string.Equals(
+                _settings.SavedTimerState, "IntervalRunning", StringComparison.OrdinalIgnoreCase);
+            bool intervalPaused = string.Equals(
+                _settings.SavedTimerState, "IntervalPaused", StringComparison.OrdinalIgnoreCase);
+            if (intervalRunning || intervalPaused)
+            {
+                _intervalActive = true;
+                _useIntervalMode = true;
+                _settings.IntervalModeEnabled = true;
+                _intervalPhase = (int)Math.Clamp(_settings.SavedIntervalPhase, 0, 1);
+                _intervalRound = (int)Math.Clamp(
+                    _settings.SavedIntervalRound <= 0 ? 1 : _settings.SavedIntervalRound, 1, 9999);
+                OnPropertyChanged(nameof(UseIntervalMode));
+
+                if (intervalRunning && _settings.SavedTimerEndUtcTicks > 0)
+                {
+                    var endUtc = new DateTimeOffset(_settings.SavedTimerEndUtcTicks, TimeSpan.Zero);
+                    _timer.RestoreRunning(duration, endUtc);
+                    Remaining = _timer.Remaining;
+                    Progress = _timer.State == TimerState.Finished
+                        ? 0
+                        : Math.Clamp(_timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+
+                    // Этап истёк, пока приложения не было: дальше честно
+                    // показываем завершённую тренировку без звука.
+                    if (_timer.State == TimerState.Finished)
+                    {
+                        _intervalActive = false;
+                        _intervalJustFinished = true;
+                        PersistTimerSession();
+                    }
+                }
+                else if (intervalPaused)
+                {
+                    _timer.RestorePaused(
+                        duration,
+                        TimeSpan.FromSeconds(_settings.SavedTimerRemainingSeconds));
+                    Remaining = _timer.Remaining;
+                    Progress = Math.Clamp(
+                        _timer.Remaining.TotalSeconds / duration.TotalSeconds, 0, 1);
+                }
+
+                RefreshIntervalProperties();
+                return;
+            }
 
             if (string.Equals(_settings.SavedTimerState, "Running", StringComparison.OrdinalIgnoreCase) &&
                 _settings.SavedTimerEndUtcTicks > 0)
@@ -769,6 +1390,11 @@ public sealed class TimerViewModel : ObservableObject
         OnPropertyChanged(nameof(CanEditInputs));
         OnPropertyChanged(nameof(ShowStart));
         OnPropertyChanged(nameof(ShowAddMinute));
+        OnPropertyChanged(nameof(IsIntervalActive));
+        OnPropertyChanged(nameof(IntervalJustFinished));
+        OnPropertyChanged(nameof(CurrentIntervalPhaseName));
+        OnPropertyChanged(nameof(IntervalRoundText));
+        OnPropertyChanged(nameof(ShowSkipPhase));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(StatusBrush));
         OnPropertyChanged(nameof(FinishedInfoTitle));
@@ -780,5 +1406,6 @@ public sealed class TimerViewModel : ObservableObject
         (PauseCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (ResumeCommand as RelayCommand)?.NotifyCanExecuteChanged();
         (AddMinuteCommand as RelayCommand)?.NotifyCanExecuteChanged();
+        (SkipPhaseCommand as RelayCommand)?.NotifyCanExecuteChanged();
     }
 }

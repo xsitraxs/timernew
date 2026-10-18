@@ -17,6 +17,12 @@ public sealed class AppSettings
     /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
     public string SoundId { get; set; } = "alarm";
 
+    /// <summary>
+    /// Мелодия короткого сигнала смены этапа тренировки и предсигнала:
+    /// alarm, chime, beep или gentle.
+    /// </summary>
+    public string PhaseSoundId { get; set; } = "beep";
+
     /// <summary>Имя скопированного пользовательского файла звука в LocalFolder.</summary>
     public string CustomSoundFileName { get; set; } = string.Empty;
 
@@ -57,4 +63,36 @@ public sealed class AppSettings
 
     /// <summary>Сохранённые пользователем пресеты.</summary>
     public List<CustomPreset> CustomPresets { get; set; } = new();
+
+    // --- Интервальный режим: бег/ходьба/тренировка по циклам ---
+
+    /// <summary>Включён ли интервальный режим двух этапов.</summary>
+    public bool IntervalModeEnabled { get; set; }
+
+    /// <summary>Название первого этапа интервалов.</summary>
+    public string IntervalWorkName { get; set; } = "Бег";
+
+    /// <summary>Название второго этапа интервалов.</summary>
+    public string IntervalRestName { get; set; } = "Ходьба";
+
+    /// <summary>Длительность первого этапа, секунды.</summary>
+    public double IntervalWorkSeconds { get; set; } = 90;
+
+    /// <summary>Длительность второго этапа, секунды.</summary>
+    public double IntervalRestSeconds { get; set; } = 120;
+
+    /// <summary>Количество кругов интервалов. 0 — бесконечно.</summary>
+    public double IntervalRounds { get; set; } = 10;
+
+    /// <summary>
+    /// Управление с телефона: приложение раздаёт страницу управления по
+    /// домашней Wi-Fi сети (QR-код в разделе «Управление с телефона»).
+    /// </summary>
+    public bool PhoneRemoteEnabled { get; set; }
+
+    /// <summary>Этап сохранённой интервальной сессии: 0 — первый, 1 — второй.</summary>
+    public long SavedIntervalPhase { get; set; }
+
+    /// <summary>Круг сохранённой интервальной сессии (счёт с 1).</summary>
+    public long SavedIntervalRound { get; set; }
 }

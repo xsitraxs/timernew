@@ -22,6 +22,7 @@ public sealed class SettingsService
     private const string VolumeKey = "Volume";
     private const string IsMutedKey = "IsMuted";
     private const string SoundIdKey = "SoundId";
+    private const string PhaseSoundIdKey = "PhaseSoundId";
     private const string CustomSoundKey = "CustomSoundFileName";
     private const string LastHoursKey = "LastHours";
     private const string LastMinutesKey = "LastMinutes";
@@ -33,6 +34,15 @@ public sealed class SettingsService
     private const string SavedRemainingKey = "SavedTimerRemainingSeconds";
     private const string LastPresetNameKey = "LastPresetName";
     private const string LastTimerNameKey = "LastTimerName";
+    private const string IntervalModeKey = "IntervalModeEnabled";
+    private const string IntervalWorkNameKey = "IntervalWorkName";
+    private const string IntervalRestNameKey = "IntervalRestName";
+    private const string IntervalWorkSecondsKey = "IntervalWorkSeconds";
+    private const string IntervalRestSecondsKey = "IntervalRestSeconds";
+    private const string IntervalRoundsKey = "IntervalRounds";
+    private const string SavedIntervalPhaseKey = "SavedIntervalPhase";
+    private const string SavedIntervalRoundKey = "SavedIntervalRound";
+    private const string PhoneRemoteKey = "PhoneRemoteEnabled";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -56,6 +66,7 @@ public sealed class SettingsService
                 Volume = GetDouble(values, VolumeKey, 0.7),
                 IsMuted = GetBool(values, IsMutedKey, false),
                 SoundId = GetString(values, SoundIdKey, "alarm"),
+                PhaseSoundId = GetString(values, PhaseSoundIdKey, "beep"),
                 CustomSoundFileName = GetString(values, CustomSoundKey, string.Empty),
                 LastHours = GetDouble(values, LastHoursKey, 0),
                 LastMinutes = GetDouble(values, LastMinutesKey, 5),
@@ -65,7 +76,16 @@ public sealed class SettingsService
                 SavedTimerDurationSeconds = GetDouble(values, SavedDurationKey, 0),
                 SavedTimerRemainingSeconds = GetDouble(values, SavedRemainingKey, 0),
                 LastPresetName = GetString(values, LastPresetNameKey, string.Empty),
-                LastTimerName = GetString(values, LastTimerNameKey, string.Empty)
+                LastTimerName = GetString(values, LastTimerNameKey, string.Empty),
+                IntervalModeEnabled = GetBool(values, IntervalModeKey, false),
+                PhoneRemoteEnabled = GetBool(values, PhoneRemoteKey, false),
+                IntervalWorkName = GetString(values, IntervalWorkNameKey, "Бег"),
+                IntervalRestName = GetString(values, IntervalRestNameKey, "Ходьба"),
+                IntervalWorkSeconds = GetDouble(values, IntervalWorkSecondsKey, 90),
+                IntervalRestSeconds = GetDouble(values, IntervalRestSecondsKey, 120),
+                IntervalRounds = GetDouble(values, IntervalRoundsKey, 10),
+                SavedIntervalPhase = GetLong(values, SavedIntervalPhaseKey, 0),
+                SavedIntervalRound = GetLong(values, SavedIntervalRoundKey, 0)
             };
 
             // Битый JSON пресетов не должен сбрасывать все остальные настройки:
@@ -107,6 +127,7 @@ public sealed class SettingsService
                 values[VolumeKey] = settings.Volume;
                 values[IsMutedKey] = settings.IsMuted;
                 values[SoundIdKey] = settings.SoundId;
+                values[PhaseSoundIdKey] = settings.PhaseSoundId;
                 values[CustomSoundKey] = settings.CustomSoundFileName;
                 values[LastHoursKey] = settings.LastHours;
                 values[LastMinutesKey] = settings.LastMinutes;
@@ -118,6 +139,15 @@ public sealed class SettingsService
                 values[SavedRemainingKey] = settings.SavedTimerRemainingSeconds;
                 values[LastPresetNameKey] = settings.LastPresetName;
                 values[LastTimerNameKey] = settings.LastTimerName;
+                values[IntervalModeKey] = settings.IntervalModeEnabled;
+                values[PhoneRemoteKey] = settings.PhoneRemoteEnabled;
+                values[IntervalWorkNameKey] = settings.IntervalWorkName;
+                values[IntervalRestNameKey] = settings.IntervalRestName;
+                values[IntervalWorkSecondsKey] = settings.IntervalWorkSeconds;
+                values[IntervalRestSecondsKey] = settings.IntervalRestSeconds;
+                values[IntervalRoundsKey] = settings.IntervalRounds;
+                values[SavedIntervalPhaseKey] = settings.SavedIntervalPhase;
+                values[SavedIntervalRoundKey] = settings.SavedIntervalRound;
                 return;
             }
             catch (Exception)

@@ -75,7 +75,9 @@ public sealed partial class CircularProgressControl : UserControl
         ProgressPath.Width = size;
         ProgressPath.Height = size;
 
-        double progress = Math.Clamp(Progress, 0.0, 1.0);
+        double progress = double.IsNaN(Progress) || double.IsInfinity(Progress)
+            ? 0.0
+            : Math.Clamp(Progress, 0.0, 1.0);
 
         if (progress <= 0.001 || radius <= 0)
         {

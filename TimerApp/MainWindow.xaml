@@ -262,7 +262,15 @@
                         MinWidth="92"
                         CornerRadius="8"
                         Padding="14,10"
-                        ToolTipService.ToolTip="Добавить минуту к текущему отсчёту" />
+                        ToolTipService.ToolTip="Добавить минуту к текущему этапу" />
+                    <Button
+                        Content="Следующий этап"
+                        Command="{Binding SkipPhaseCommand}"
+                        Visibility="{Binding ShowSkipPhase, Converter={StaticResource BoolToVisibility}}"
+                        MinWidth="142"
+                        CornerRadius="8"
+                        Padding="14,10"
+                        ToolTipService.ToolTip="Сразу перейти к следующему этапу тренировки" />
                     <Button
                         Command="{Binding ResetCommand}"
                         Visibility="{Binding IsIdle, Converter={StaticResource BoolToVisibility}, ConverterParameter=Invert}"
@@ -429,6 +437,194 @@
                             CornerRadius="8"
                             IsEnabled="{Binding CanEditInputs}"
                             Click="AddCustomPresetButton_Click" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Интервальный таймер: бег/ходьба по циклам без нажатий -->
+                <Border x:Name="IntervalSection" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Интервальный таймер" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock
+                            Text="Для бега и тренировок: этапы чередуются сами — например, бег 1:30, ходьба 2:00 и дальше по кругу. Ничего нажимать не нужно."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
+
+                        <TextBlock Text="Готовые программы" FontSize="13" FontWeight="SemiBold" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Content="Табата 20/10"
+                                CornerRadius="8" Padding="10,6"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Command="{Binding ApplyIntervalProgramCommand}"
+                                CommandParameter="tabata" />
+                            <Button
+                                Content="Бег новичкам 1:00/2:00"
+                                CornerRadius="8" Padding="10,6"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Command="{Binding ApplyIntervalProgramCommand}"
+                                CommandParameter="runbeginner" />
+                            <Button
+                                Content="Интервалы 1:30/2:00"
+                                CornerRadius="8" Padding="10,6"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Command="{Binding ApplyIntervalProgramCommand}"
+                                CommandParameter="runinterval" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Content="HIIT 40/20"
+                                CornerRadius="8" Padding="10,6"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Command="{Binding ApplyIntervalProgramCommand}"
+                                CommandParameter="hiit" />
+                            <Button
+                                Content="Помодоро 25/5"
+                                CornerRadius="8" Padding="10,6"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Command="{Binding ApplyIntervalProgramCommand}"
+                                CommandParameter="pomodoro" />
+                        </StackPanel>
+                        <TextBlock
+                            Text="Программа заполняет этапы и круги — остаётся нажать «Старт». Свои значения можно поправить ниже."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
+
+                        <ToggleSwitch
+                            Header="Режим по циклам"
+                            IsOn="{Binding UseIntervalMode, Mode=TwoWay}" />
+
+                        <StackPanel
+                            Spacing="12"
+                            Visibility="{Binding UseIntervalMode, Converter={StaticResource BoolToVisibility}}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Этап 1" FontSize="13" FontWeight="SemiBold" />
+                                <TextBox
+                                    Header="Название"
+                                    PlaceholderText="Бег"
+                                    IsEnabled="{Binding CanEditInputs}"
+                                    Text="{Binding IntervalWorkName, Mode=TwoWay}" />
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <NumberBox
+                                        Grid.Column="0"
+                                        Header="Минуты"
+                                        Minimum="0" Maximum="600"
+                                        SmallChange="1" LargeChange="5"
+                                        SpinButtonPlacementMode="Compact"
+                                        IsEnabled="{Binding CanEditInputs}"
+                                        Value="{Binding IntervalWorkMinutes, Mode=TwoWay}" />
+                                    <NumberBox
+                                        Grid.Column="1"
+                                        Header="Секунды"
+                                        Minimum="0" Maximum="59"
+                                        SmallChange="1" LargeChange="5"
+                                        SpinButtonPlacementMode="Compact"
+                                        IsEnabled="{Binding CanEditInputs}"
+                                        Value="{Binding IntervalWorkSecondsPart, Mode=TwoWay}" />
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Этап 2" FontSize="13" FontWeight="SemiBold" />
+                                <TextBox
+                                    Header="Название"
+                                    PlaceholderText="Ходьба"
+                                    IsEnabled="{Binding CanEditInputs}"
+                                    Text="{Binding IntervalRestName, Mode=TwoWay}" />
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <NumberBox
+                                        Grid.Column="0"
+                                        Header="Минуты"
+                                        Minimum="0" Maximum="600"
+                                        SmallChange="1" LargeChange="5"
+                                        SpinButtonPlacementMode="Compact"
+                                        IsEnabled="{Binding CanEditInputs}"
+                                        Value="{Binding IntervalRestMinutes, Mode=TwoWay}" />
+                                    <NumberBox
+                                        Grid.Column="1"
+                                        Header="Секунды"
+                                        Minimum="0" Maximum="59"
+                                        SmallChange="1" LargeChange="5"
+                                        SpinButtonPlacementMode="Compact"
+                                        IsEnabled="{Binding CanEditInputs}"
+                                        Value="{Binding IntervalRestSecondsPart, Mode=TwoWay}" />
+                                </Grid>
+                            </StackPanel>
+
+                            <NumberBox
+                                Header="Кругов (0 — бесконечно)"
+                                Minimum="0" Maximum="999"
+                                SmallChange="1" LargeChange="5"
+                                SpinButtonPlacementMode="Compact"
+                                IsEnabled="{Binding CanEditInputs}"
+                                Value="{Binding IntervalRoundsInput, Mode=TwoWay}" />
+                            <TextBlock
+                                Text="{Binding IntervalCycleText, Mode=OneWay}"
+                                FontSize="12"
+                                Opacity="0.65"
+                                TextWrapping="Wrap" />
+                            <ComboBox
+                                x:Name="PhaseSoundComboBox"
+                                Header="Сигнал смены этапа"
+                                HorizontalAlignment="Stretch"
+                                SelectionChanged="PhaseSoundComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Цифровые бипы" Tag="beep" />
+                                <ComboBoxItem Content="Колокольчики" Tag="chime" />
+                                <ComboBoxItem Content="Классический" Tag="alarm" />
+                                <ComboBoxItem Content="Мягкий" Tag="gentle" />
+                            </ComboBox>
+                            <TextBlock
+                                Text="Короткий сигнал отметит смену этапа, длинный — конец всей тренировки. За 3 секунды до конца этапа тот же сигнал прозвучит тише — «приготовься». Кнопка «Следующий этап» сразу переходит дальше."
+                                FontSize="12"
+                                Opacity="0.6"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Управление с телефона: страница управления по Wi-Fi -->
+                <Border x:Name="PhoneSection" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Управление с телефона" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock
+                            Text="Приложение само раздаёт страницу управления по вашей Wi-Fi сети: на телефоне — крупные цифры, кнопки старт/пауза, «+1 мин», сброс и быстрый запуск одной строкой. Устанавливать на телефон ничего не нужно."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
+                        <ToggleSwitch
+                            Header="Доступ по Wi-Fi"
+                            IsOn="{Binding PhoneRemoteEnabled, Mode=TwoWay}" />
+                        <StackPanel
+                            Spacing="10"
+                            Visibility="{Binding PhoneRemoteEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <Border
+                                Background="White"
+                                CornerRadius="8"
+                                Padding="10"
+                                HorizontalAlignment="Left">
+                                <Image x:Name="PhoneQrImage" Width="168" Height="168" />
+                            </Border>
+                            <TextBlock
+                                x:Name="PhoneUrlText"
+                                FontSize="12"
+                                Opacity="0.8"
+                                TextWrapping="Wrap"
+                                IsTextSelectionEnabled="True" />
+                            <TextBlock
+                                Text="Наведите камеру телефона на QR-код (или введите ссылку вручную). Телефон должен быть в той же сети Wi-Fi, а приложение на компьютере — открыто. В ссылке личный ключ: не пересылайте её посторонним."
+                                FontSize="12"
+                                Opacity="0.6"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
