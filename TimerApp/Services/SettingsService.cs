@@ -65,6 +65,7 @@ public sealed class SettingsService
                 Volume = GetDouble(values, VolumeKey, 0.7),
                 IsMuted = GetBool(values, IsMutedKey, false),
                 SoundId = GetString(values, SoundIdKey, "alarm"),
+                PhaseSoundId = GetString(values, PhaseSoundIdKey, "beep"),
                 CustomSoundFileName = GetString(values, CustomSoundKey, string.Empty),
                 LastHours = GetDouble(values, LastHoursKey, 0),
                 LastMinutes = GetDouble(values, LastMinutesKey, 5),

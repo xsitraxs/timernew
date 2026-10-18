@@ -283,7 +283,7 @@ public sealed class PhoneRemoteService : IDisposable
 
             case "/api/cmd":
                 if (query.TryGetValue("c", out string? command) &&
-                    command is "start" or "pause" or "resume" or "reset" or "add" or "skip")
+                    command is "start" or "pause" or "resume" or "reset" or "add" or "skip" or "interval")
                 {
                     CommandReceived?.Invoke(command);
                     return ("200 OK", "application/json; charset=utf-8", "{\"ok\":true}");
@@ -437,6 +437,7 @@ public sealed class PhoneRemoteService : IDisposable
 <div id="end"></div>
 <div class="row">
   <button id="bStart" class="main" onclick="cmd('start')">Старт</button>
+  <button id="bInterval" class="main" onclick="cmd('interval')">Старт тренировки</button>
   <button id="bPause" onclick="cmd('pause')">Пауза</button>
   <button id="bResume" class="main" onclick="cmd('resume')">Продолжить</button>
   <button id="bAdd" onclick="cmd('add')">+1 мин</button>
@@ -469,6 +470,7 @@ async function tick(){
       s.intervalActive ? (s.phaseName + ' · круг ' + s.roundText) : '';
     document.getElementById('bar').style.width = Math.round((s.progress||0)*100) + '%';
     show('bStart', s.showStart);
+    show('bInterval', s.showStart);
     show('bPause', s.isRunning);
     show('bResume', s.isPaused);
     show('bAdd', s.isRunning || s.isPaused);

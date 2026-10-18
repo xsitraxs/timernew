@@ -17,6 +17,12 @@ public sealed class AppSettings
     /// <summary>Выбранная мелодия: alarm, chime, beep, gentle или custom.</summary>
     public string SoundId { get; set; } = "alarm";
 
+    /// <summary>
+    /// Мелодия короткого сигнала смены этапа тренировки и предсигнала:
+    /// alarm, chime, beep или gentle.
+    /// </summary>
+    public string PhaseSoundId { get; set; } = "beep";
+
     /// <summary>Имя скопированного пользовательского файла звука в LocalFolder.</summary>
     public string CustomSoundFileName { get; set; } = string.Empty;
 

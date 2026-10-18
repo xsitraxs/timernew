@@ -31,6 +31,7 @@ public sealed class TimerViewModel : ObservableObject
     private double _volumePercent = 70;
     private bool _isMuted;
     private string _soundId = "alarm";
+    private string _phaseSoundId = "beep";
     private bool _isDarkTheme = true;
     private string _selectedPresetName = string.Empty;
     private string _timerName = string.Empty;
@@ -66,6 +67,7 @@ public sealed class TimerViewModel : ObservableObject
         _volumePercent = Math.Clamp(settings.Volume, 0, 1) * 100;
         _isMuted = settings.IsMuted;
         _soundId = string.IsNullOrWhiteSpace(settings.SoundId) ? "alarm" : settings.SoundId;
+        _phaseSoundId = string.IsNullOrWhiteSpace(settings.PhaseSoundId) ? "beep" : settings.PhaseSoundId;
         _isDarkTheme = !string.Equals(settings.Theme, "Light", StringComparison.OrdinalIgnoreCase);
         _selectedPresetName = settings.LastPresetName ?? string.Empty;
         _timerName = settings.LastTimerName ?? string.Empty;
@@ -95,6 +97,7 @@ public sealed class TimerViewModel : ObservableObject
         _timer.SetDuration(initialDuration);
         _sound.ApplyVolume(_volumePercent / 100.0, _isMuted);
         _sound.SetSound(_soundId, _settingsService.GetCustomSoundFilePath(settings));
+        _sound.SetPhaseSound(_phaseSoundId);
 
         _timer.Ticked += OnTimerTicked;
         _timer.StateChanged += OnTimerStateChanged;
@@ -109,6 +112,7 @@ public sealed class TimerViewModel : ObservableObject
         ToggleStartPauseCommand = new RelayCommand(ToggleStartPause);
         ApplyPresetCommand = new RelayCommand<object?>(ApplyPreset);
         ApplyCustomPresetCommand = new RelayCommand<CustomPreset>(ApplyCustomPreset);
+        ApplyIntervalProgramCommand = new RelayCommand<string?>(ApplyIntervalProgram);
         DeleteCustomPresetCommand = new RelayCommand<CustomPreset>(DeleteCustomPreset);
         AddMinuteCommand = new RelayCommand(AddMinute, () => IsRunning || IsPaused);
         SkipPhaseCommand = new RelayCommand(SkipPhase, () =>
@@ -360,6 +364,21 @@ public sealed class TimerViewModel : ObservableObject
             {
                 _settings.SoundId = value;
                 _sound.SetSound(value, _settingsService.GetCustomSoundFilePath(_settings));
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>Мелодия короткого сигнала смены этапа: alarm, chime, beep или gentle.</summary>
+    public string PhaseSoundId
+    {
+        get => _phaseSoundId;
+        set
+        {
+            if (SetProperty(ref _phaseSoundId, value))
+            {
+                _settings.PhaseSoundId = value;
+                _sound.SetPhaseSound(value);
                 _settingsService.Save(_settings);
             }
         }
@@ -791,6 +810,7 @@ public sealed class TimerViewModel : ObservableObject
     public ICommand DeleteCustomPresetCommand { get; }
     public ICommand AddMinuteCommand { get; }
     public ICommand SkipPhaseCommand { get; }
+    public ICommand ApplyIntervalProgramCommand { get; }
     public ICommand ToggleMuteCommand { get; }
     public ICommand PreviewSoundCommand { get; }
 
@@ -870,8 +890,55 @@ public sealed class TimerViewModel : ObservableObject
             PersistTimerSession();
         }
 
-        _sound.PlayPreview();
+        _sound.PlayPhaseCue();
         RefreshIntervalProperties();
+    }
+
+    /// <summary>
+    /// Готовая программа одним нажатием: заполняет этапы, круги
+    /// и включает режим тренировки. Запускать нужно кнопкой «Старт».
+    /// </summary>
+    private void ApplyIntervalProgram(string? key)
+    {
+        if (!(IsIdle || IsFinished))
+            return;
+
+        (string workName, int workSeconds, string restName, int restSeconds, int rounds) = key switch
+        {
+            "tabata" => ("Работа", 20, "Отдых", 10, 8),
+            "runbeginner" => ("Бег", 60, "Ходьба", 120, 10),
+            "runinterval" => ("Бег", 90, "Ходьба", 120, 10),
+            "hiit" => ("Работа", 40, "Отдых", 20, 12),
+            "pomodoro" => ("Фокус", 1500, "Отдых", 300, 4),
+            _ => ("", 0, "", 0, 0)
+        };
+
+        if (workSeconds <= 0)
+            return;
+
+        IntervalWorkName = workName;
+        IntervalRestName = restName;
+        IntervalWorkMinutes = workSeconds / 60;
+        IntervalWorkSecondsPart = workSeconds % 60;
+        IntervalRestMinutes = restSeconds / 60;
+        IntervalRestSecondsPart = restSeconds % 60;
+        IntervalRoundsInput = rounds;
+
+        if (!UseIntervalMode)
+            UseIntervalMode = true;
+    }
+
+    /// <summary>Кнопка «Старт тренировки» на странице телефона.</summary>
+    public bool StartIntervalFromPhone()
+    {
+        if (!(IsIdle || IsFinished))
+            return false;
+
+        if (!UseIntervalMode)
+            UseIntervalMode = true;
+
+        Start();
+        return IsRunning;
     }
 
     /// <summary>
@@ -1119,12 +1186,23 @@ public sealed class TimerViewModel : ObservableObject
 
     private void OnTimerTicked(object? sender, EventArgs e)
     {
+        double previousSeconds = _remaining.TotalSeconds;
+
         OnPropertyChanged(nameof(EndTimeText));
         OnPropertyChanged(nameof(StatusBrush));
         Remaining = _timer.Remaining;
         Progress = _timer.Duration > TimeSpan.Zero
             ? Math.Clamp(_timer.Remaining.TotalSeconds / _timer.Duration.TotalSeconds, 0, 1)
             : 0;
+
+        // Предсигнал за 3 секунды до конца этапа тренировки: тот же
+        // короткий сигнал, но тише — «приготовься к смене этапа».
+        if (_intervalActive && _timer.State == TimerState.Running)
+        {
+            double nowSeconds = _timer.Remaining.TotalSeconds;
+            if (previousSeconds > 3.0 && nowSeconds <= 3.0 && nowSeconds > 0)
+                _sound.PlayPhaseWarning();
+        }
     }
 
     private void OnTimerStateChanged(object? sender, EventArgs e)
@@ -1142,7 +1220,7 @@ public sealed class TimerViewModel : ObservableObject
         // и сразу следующий этап — без будильника на 35 секунд и без тоста.
         if (_intervalActive && TryAdvanceIntervalPhase())
         {
-            _sound.PlayPreview();
+            _sound.PlayPhaseCue();
             RefreshIntervalProperties();
             return;
         }

@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
     private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
     private bool _syncingSoundSelection;
+    private bool _syncingPhaseSoundSelection;
 
     public MainWindow()
     {
@@ -62,6 +63,7 @@ public sealed partial class MainWindow : Window
         ConfigureWindow();
         ApplyTheme(ViewModel.IsDarkTheme);
         SyncSoundComboBoxSelection(ViewModel.SoundId);
+        SyncPhaseSoundComboBoxSelection(ViewModel.PhaseSoundId);
 
         RootGrid.Loaded += (_, _) => RootGrid.Focus(FocusState.Programmatic);
         Closed += OnClosed;
@@ -204,6 +206,9 @@ public sealed partial class MainWindow : Window
                     break;
                 case "skip":
                     if (ViewModel.SkipPhaseCommand.CanExecute(null)) ViewModel.SkipPhaseCommand.Execute(null);
+                    break;
+                case "interval":
+                    ViewModel.StartIntervalFromPhone();
                     break;
             }
         });
@@ -379,6 +384,41 @@ public sealed partial class MainWindow : Window
         {
             _syncingSoundSelection = false;
         }
+    }
+
+    private void SyncPhaseSoundComboBoxSelection(string soundId)
+    {
+        _syncingPhaseSoundSelection = true;
+        try
+        {
+            foreach (var obj in PhaseSoundComboBox.Items)
+            {
+                if (obj is ComboBoxItem item &&
+                    string.Equals(item.Tag as string, soundId, StringComparison.OrdinalIgnoreCase))
+                {
+                    PhaseSoundComboBox.SelectedItem = item;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            _syncingPhaseSoundSelection = false;
+        }
+    }
+
+    private void PhaseSoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_syncingPhaseSoundSelection)
+            return;
+
+        if (PhaseSoundComboBox.SelectedItem is not ComboBoxItem item ||
+            item.Tag is not string soundId)
+        {
+            return;
+        }
+
+        ViewModel.PhaseSoundId = soundId;
     }
 
     private async void SoundComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
