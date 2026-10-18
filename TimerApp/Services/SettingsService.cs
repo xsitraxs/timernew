@@ -22,6 +22,7 @@ public sealed class SettingsService
     private const string VolumeKey = "Volume";
     private const string IsMutedKey = "IsMuted";
     private const string SoundIdKey = "SoundId";
+    private const string PhaseSoundIdKey = "PhaseSoundId";
     private const string CustomSoundKey = "CustomSoundFileName";
     private const string LastHoursKey = "LastHours";
     private const string LastMinutesKey = "LastMinutes";
@@ -126,6 +127,7 @@ public sealed class SettingsService
                 values[VolumeKey] = settings.Volume;
                 values[IsMutedKey] = settings.IsMuted;
                 values[SoundIdKey] = settings.SoundId;
+                values[PhaseSoundIdKey] = settings.PhaseSoundId;
                 values[CustomSoundKey] = settings.CustomSoundFileName;
                 values[LastHoursKey] = settings.LastHours;
                 values[LastMinutesKey] = settings.LastMinutes;
