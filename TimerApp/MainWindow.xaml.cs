@@ -474,18 +474,42 @@ public sealed partial class MainWindow : Window
         string targetName = "custom-sound" + file.FileType;
         string folderPath = _settingsService.GetCustomSoundFolderPath();
 
+        bool copied;
         try
         {
             var folder = await StorageFolder.GetFolderFromPathAsync(folderPath);
             await file.CopyAsync(folder, targetName, NameCollisionOption.ReplaceExisting);
+            copied = true;
         }
         catch (Exception)
         {
-            // Резервный путь обычным копированием файла.
-            if (!string.IsNullOrWhiteSpace(file.Path))
-                File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
-            else
-                throw;
+            copied = false;
+        }
+
+        if (!copied)
+        {
+            // Резервный путь обычным копированием файла. Метод зовётся из
+            // async void обработчиков, поэтому сбои наружу не пробрасываем:
+            // необработанное исключение там роняет всё приложение.
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(file.Path))
+                {
+                    File.Copy(file.Path, Path.Combine(folderPath, targetName), overwrite: true);
+                    copied = true;
+                }
+            }
+            catch (Exception)
+            {
+                copied = false;
+            }
+        }
+
+        if (!copied)
+        {
+            // Не вышло: оставляем текущую мелодию и честно возвращаем выбор.
+            SyncSoundComboBoxSelection(ViewModel.SoundId);
+            return;
         }
 
         ViewModel.SetCustomSoundFile(targetName);
@@ -595,7 +619,7 @@ public sealed partial class MainWindow : Window
         // Не перехватываем клавиши, когда пользователь печатает в полях ввода
         // или когда фокус на кнопке (пробел тогда нажмёт саму кнопку —
         // это стандартное поведение Windows).
-        if (e.OriginalSource is TextBox or NumberBox)
+        if (e.OriginalSource is TextBox or NumberBox or ComboBox)
             return;
 
         switch (e.Key)

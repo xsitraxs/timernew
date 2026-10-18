@@ -1302,7 +1302,7 @@ public sealed class TimerViewModel : ObservableObject
 
             // Интервальная тренировка восстанавливается в свой режим: этап и
             // круг сохранены отдельно, а время этапа — общим механизмом.
-            bool intervalRunning = string.Equals(
+            bool intervalRunning = _settings.SavedTimerEndUtcTicks > 0 && string.Equals(
                 _settings.SavedTimerState, "IntervalRunning", StringComparison.OrdinalIgnoreCase);
             bool intervalPaused = string.Equals(
                 _settings.SavedTimerState, "IntervalPaused", StringComparison.OrdinalIgnoreCase);

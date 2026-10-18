@@ -46,6 +46,7 @@ public sealed class PhoneRemoteService : IDisposable
 {
     private const int BasePort = 8777;
     private const int MaxHeaderBytes = 32 * 1024;
+    private const int MaxBodyBytes = 8192;
 
     private readonly string _token = NewToken();
     private TcpListener? _listener;
@@ -143,7 +144,11 @@ public sealed class PhoneRemoteService : IDisposable
             try
             {
                 var stream = client.GetStream();
-                var request = await ReadRequestAsync(stream);
+
+                // Медленное или зависшее подключение не должно держать
+                // обработчик вечно: на весь запрос даём 10 секунд.
+                using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                var request = await ReadRequestAsync(stream, readTimeout.Token);
                 if (request is null)
                     return;
 
@@ -182,7 +187,8 @@ public sealed class PhoneRemoteService : IDisposable
         public string Body { get; }
     }
 
-    private static async Task<HttpRequest?> ReadRequestAsync(NetworkStream stream)
+    private static async Task<HttpRequest?> ReadRequestAsync(
+        NetworkStream stream, CancellationToken cancellationToken)
     {
         var buffer = new MemoryStream();
         var chunk = new byte[4096];
@@ -190,7 +196,7 @@ public sealed class PhoneRemoteService : IDisposable
 
         while (buffer.Length < MaxHeaderBytes)
         {
-            int read = await stream.ReadAsync(chunk, 0, chunk.Length);
+            int read = await stream.ReadAsync(chunk, 0, chunk.Length, cancellationToken);
             if (read <= 0)
                 return null;
 
@@ -238,16 +244,19 @@ public sealed class PhoneRemoteService : IDisposable
         if (leftover > 0)
             bodyBytes.Write(all, headerLength, leftover);
 
-        while (bodyBytes.Length < contentLength)
+        // Тело нужно только быстрому запуску («15м чай») — оно короткое.
+        // Заявленный Content-Length не доверяем: читаем не больше лимита.
+        while (bodyBytes.Length < contentLength && bodyBytes.Length < MaxBodyBytes)
         {
-            int read = await stream.ReadAsync(chunk, 0, chunk.Length);
+            int read = await stream.ReadAsync(chunk, 0, chunk.Length, cancellationToken);
             if (read <= 0)
                 break;
             bodyBytes.Write(chunk, 0, read);
         }
 
-        string body = Encoding.UTF8.GetString(
-            bodyBytes.GetBuffer(), 0, (int)Math.Min(bodyBytes.Length, Math.Max(contentLength, 0)));
+        int bodyLength = (int)Math.Min(
+            bodyBytes.Length, Math.Min(Math.Max(contentLength, 0), MaxBodyBytes));
+        string body = Encoding.UTF8.GetString(bodyBytes.GetBuffer(), 0, bodyLength);
         return new HttpRequest(method, path, query, body);
     }
 
@@ -282,6 +291,9 @@ public sealed class PhoneRemoteService : IDisposable
                 return ("200 OK", "application/json; charset=utf-8", StateJson());
 
             case "/api/cmd":
+                if (!string.Equals(request.Method, "POST", StringComparison.Ordinal))
+                    return ("405 Method Not Allowed", "application/json; charset=utf-8", "{\"ok\":false}");
+
                 if (query.TryGetValue("c", out string? command) &&
                     command is "start" or "pause" or "resume" or "reset" or "add" or "skip" or "interval")
                 {
@@ -292,6 +304,9 @@ public sealed class PhoneRemoteService : IDisposable
                 return ("400 Bad Request", "application/json; charset=utf-8", "{\"ok\":false}");
 
             case "/api/quick":
+                if (!string.Equals(request.Method, "POST", StringComparison.Ordinal))
+                    return ("405 Method Not Allowed", "application/json; charset=utf-8", "{\"ok\":false}");
+
                 string text = (request.Body ?? string.Empty).Trim();
                 if (text.Length > 0)
                 {
@@ -328,11 +343,32 @@ public sealed class PhoneRemoteService : IDisposable
         return sb.ToString();
     }
 
-    private static string JsonEscape(string? value) => (value ?? string.Empty)
-        .Replace("\\", "\\\\")
-        .Replace("\"", "\\\"")
-        .Replace("\r", " ")
-        .Replace("\n", " ");
+    private static string JsonEscape(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        var sb = new StringBuilder(value.Length);
+        foreach (char c in value)
+        {
+            switch (c)
+            {
+                case '\\':
+                    sb.Append("\\\\");
+                    break;
+                case '"':
+                    sb.Append("\\\"");
+                    break;
+                default:
+                    // Управляющие символы (таб, переводы строк из пользовательских
+                    // названий) в строгом JSON недопустимы — заменяем пробелом.
+                    sb.Append(c < ' ' ? ' ' : c);
+                    break;
+            }
+        }
+
+        return sb.ToString();
+    }
 
     private static System.Collections.Generic.Dictionary<string, string> ParseQuery(string query)
     {
@@ -395,7 +431,7 @@ public sealed class PhoneRemoteService : IDisposable
 
     private static string NewToken()
     {
-        Span<byte> bytes = stackalloc byte[6];
+        Span<byte> bytes = stackalloc byte[8];
         RandomNumberGenerator.Fill(bytes);
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

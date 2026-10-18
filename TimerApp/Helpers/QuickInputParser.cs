@@ -105,7 +105,10 @@ public static class QuickInputParser
             if (FillerWords.Contains(token))
                 continue;
 
-            nameTokens.Add(rawToken.Trim(',', ';'));
+            // Токен из одной пунктуации («—», «,») названия не добавляет.
+            string nameToken = rawToken.Trim(',', ';');
+            if (nameToken.Length > 0)
+                nameTokens.Add(nameToken);
         }
 
         string name = string.Join(" ", nameTokens).Trim(' ', '-', '—', ':', ',', ';');
