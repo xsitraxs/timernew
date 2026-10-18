@@ -41,6 +41,7 @@ public sealed class SettingsService
     private const string IntervalRoundsKey = "IntervalRounds";
     private const string SavedIntervalPhaseKey = "SavedIntervalPhase";
     private const string SavedIntervalRoundKey = "SavedIntervalRound";
+    private const string PhoneRemoteKey = "PhoneRemoteEnabled";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -75,6 +76,7 @@ public sealed class SettingsService
                 LastPresetName = GetString(values, LastPresetNameKey, string.Empty),
                 LastTimerName = GetString(values, LastTimerNameKey, string.Empty),
                 IntervalModeEnabled = GetBool(values, IntervalModeKey, false),
+                PhoneRemoteEnabled = GetBool(values, PhoneRemoteKey, false),
                 IntervalWorkName = GetString(values, IntervalWorkNameKey, "Бег"),
                 IntervalRestName = GetString(values, IntervalRestNameKey, "Ходьба"),
                 IntervalWorkSeconds = GetDouble(values, IntervalWorkSecondsKey, 90),
@@ -135,6 +137,7 @@ public sealed class SettingsService
                 values[LastPresetNameKey] = settings.LastPresetName;
                 values[LastTimerNameKey] = settings.LastTimerName;
                 values[IntervalModeKey] = settings.IntervalModeEnabled;
+                values[PhoneRemoteKey] = settings.PhoneRemoteEnabled;
                 values[IntervalWorkNameKey] = settings.IntervalWorkName;
                 values[IntervalRestNameKey] = settings.IntervalRestName;
                 values[IntervalWorkSecondsKey] = settings.IntervalWorkSeconds;

@@ -78,6 +78,12 @@ public sealed class AppSettings
     /// <summary>Количество кругов интервалов. 0 — бесконечно.</summary>
     public double IntervalRounds { get; set; } = 10;
 
+    /// <summary>
+    /// Управление с телефона: приложение раздаёт страницу управления по
+    /// домашней Wi-Fi сети (QR-код в разделе «Управление с телефона»).
+    /// </summary>
+    public bool PhoneRemoteEnabled { get; set; }
+
     /// <summary>Этап сохранённой интервальной сессии: 0 — первый, 1 — второй.</summary>
     public long SavedIntervalPhase { get; set; }
 

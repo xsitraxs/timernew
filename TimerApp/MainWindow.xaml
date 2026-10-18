@@ -540,6 +540,43 @@
                     </StackPanel>
                 </Border>
 
+                <!-- Управление с телефона: страница управления по Wi-Fi -->
+                <Border x:Name="PhoneSection" Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Управление с телефона" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock
+                            Text="Приложение само раздаёт страницу управления по вашей Wi-Fi сети: на телефоне — крупные цифры, кнопки старт/пауза, «+1 мин», сброс и быстрый запуск одной строкой. Устанавливать на телефон ничего не нужно."
+                            FontSize="12"
+                            Opacity="0.6"
+                            TextWrapping="Wrap" />
+                        <ToggleSwitch
+                            Header="Доступ по Wi-Fi"
+                            IsOn="{Binding PhoneRemoteEnabled, Mode=TwoWay}" />
+                        <StackPanel
+                            Spacing="10"
+                            Visibility="{Binding PhoneRemoteEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <Border
+                                Background="White"
+                                CornerRadius="8"
+                                Padding="10"
+                                HorizontalAlignment="Left">
+                                <Image x:Name="PhoneQrImage" Width="168" Height="168" />
+                            </Border>
+                            <TextBlock
+                                x:Name="PhoneUrlText"
+                                FontSize="12"
+                                Opacity="0.8"
+                                TextWrapping="Wrap"
+                                IsTextSelectionEnabled="True" />
+                            <TextBlock
+                                Text="Наведите камеру телефона на QR-код (или введите ссылку вручную). Телефон должен быть в той же сети Wi-Fi, а приложение на компьютере — открыто. В ссылке личный ключ: не пересылайте её посторонним."
+                                FontSize="12"
+                                Opacity="0.6"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
                 <!-- Звук: в минималистичной компоновке это сворачиваемые настройки -->
                 <Expander
                     x:Name="SoundSection"

@@ -47,6 +47,7 @@ public sealed class TimerViewModel : ObservableObject
     private int _intervalPhase;
     private int _intervalRound = 1;
     private bool _intervalJustFinished;
+    private bool _phoneRemoteEnabled;
 
     public TimerViewModel(
         TimerService timer,
@@ -82,6 +83,7 @@ public sealed class TimerViewModel : ObservableObject
         _intervalRestMinutes = Math.Clamp(restTotalSeconds / 60, 0, 600);
         _intervalRestSecondsPart = Math.Clamp(restTotalSeconds % 60, 0, 59);
         _intervalRoundsInput = Math.Clamp(settings.IntervalRounds, 0, 999);
+        _phoneRemoteEnabled = settings.PhoneRemoteEnabled;
 
         foreach (var preset in settings.CustomPresets)
             CustomPresets.Add(preset);
@@ -394,6 +396,23 @@ public sealed class TimerViewModel : ObservableObject
             if (SetProperty(ref _isDarkTheme, value))
             {
                 _settings.Theme = value ? "Dark" : "Light";
+                _settingsService.Save(_settings);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Управление с телефона по домашней Wi-Fi сети: окно по этой настройке
+    /// поднимает/гасит локальный веб-сервер с QR-кодом.
+    /// </summary>
+    public bool PhoneRemoteEnabled
+    {
+        get => _phoneRemoteEnabled;
+        set
+        {
+            if (SetProperty(ref _phoneRemoteEnabled, value))
+            {
+                _settings.PhoneRemoteEnabled = value;
                 _settingsService.Save(_settings);
             }
         }
@@ -1006,6 +1025,22 @@ public sealed class TimerViewModel : ObservableObject
                 ? $"Принято: {TimeFormatter.FormatFriendly(parsed)} — «{TimerName}»."
                 : $"Принято: {TimeFormatter.FormatFriendly(parsed)}."
             : $"Название таймера: «{TimerName}».";
+        return true;
+    }
+
+    /// <summary>
+    /// Быстрый запуск одной строкой — для кнопки на странице телефона:
+    /// разобрать «15м чай» и сразу стартовать. Если что-то уже идёт,
+    /// ничего не трогаем.
+    /// </summary>
+    public bool QuickStart(string? text)
+    {
+        if (!ApplyQuickInput(text))
+            return false;
+
+        if (IsIdle || IsFinished)
+            Start();
+
         return true;
     }
 

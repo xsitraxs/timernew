@@ -9,6 +9,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
+using Microsoft.UI.Xaml.Media.Imaging;
+using QRCoder;
 using TimerApp.Helpers;
 using TimerApp.Models;
 using TimerApp.Services;
@@ -16,6 +18,7 @@ using TimerApp.ViewModels;
 using Windows.Graphics;
 using Windows.Storage;
 using Windows.Storage.Pickers;
+using Windows.Storage.Streams;
 using Windows.System;
 
 namespace TimerApp;
@@ -30,6 +33,7 @@ public sealed partial class MainWindow : Window
     private readonly SettingsService _settingsService;
     private readonly TimerService _timerService;
     private readonly SoundService _soundService;
+    private readonly PhoneRemoteService _phoneRemote = new();
     private bool _isCompact;
     private SizeInt32 _sizeBeforeMini;
     private bool _customPresetClickSuppressed;
@@ -49,6 +53,11 @@ public sealed partial class MainWindow : Window
         RootGrid.DataContext = ViewModel;
         ViewModel.TimerFinished += OnTimerFinished;
         ViewModel.PropertyChanged += OnViewModelPropertyChanged;
+
+        _phoneRemote.CommandReceived += OnPhoneCommand;
+        _phoneRemote.QuickStartReceived += OnPhoneQuickStart;
+        UpdatePhoneState();
+        ApplyPhoneRemote();
 
         ConfigureWindow();
         ApplyTheme(ViewModel.IsDarkTheme);
@@ -103,6 +112,12 @@ public sealed partial class MainWindow : Window
         if (e.PropertyName == nameof(TimerViewModel.IsDarkTheme))
             ApplyTheme(ViewModel.IsDarkTheme);
 
+        if (e.PropertyName == nameof(TimerViewModel.PhoneRemoteEnabled))
+            ApplyPhoneRemote();
+
+        // Страница на телефоне опрашивает снимок состояния — держим его свежим.
+        UpdatePhoneState();
+
         // Как только состояние ушло из Finished (старт/сброс/правки) — стоп миганию.
         if (e.PropertyName == nameof(TimerViewModel.WindowTitleText) &&
             !string.Equals(Title, ViewModel.WindowTitleText, StringComparison.Ordinal))
@@ -113,6 +128,111 @@ public sealed partial class MainWindow : Window
 
         if (e.PropertyName == nameof(TimerViewModel.IsFinished) && !ViewModel.IsFinished)
             StopFinishedAnimation();
+    }
+
+    // ------------------------------------------------------- телефонный пульт
+
+    /// <summary>Включает/выключает локальный веб-сервер по тумблеру настроек.</summary>
+    private async void ApplyPhoneRemote()
+    {
+        if (!ViewModel.PhoneRemoteEnabled)
+        {
+            _phoneRemote.Stop();
+            PhoneQrImage.Source = null;
+            return;
+        }
+
+        if (!_phoneRemote.Start())
+        {
+            PhoneUrlText.Text = "Не удалось открыть доступ (порты заняты). Попробуйте перезапустить приложение.";
+            return;
+        }
+
+        PhoneUrlText.Text = _phoneRemote.AccessUrl;
+        await ShowPhoneQrAsync(_phoneRemote.AccessUrl!);
+    }
+
+    private async System.Threading.Tasks.Task ShowPhoneQrAsync(string url)
+    {
+        try
+        {
+            using var generator = new QRCodeGenerator();
+            using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+            var png = new PngByteQRCode(data);
+            byte[] bytes = png.GetGraphic(16);
+
+            using var stream = new InMemoryRandomAccessStream();
+            using (var writer = new DataWriter(stream))
+            {
+                writer.WriteBytes(bytes);
+                await writer.StoreAsync();
+                writer.DetachStream();
+            }
+
+            stream.Seek(0);
+            var bitmap = new BitmapImage();
+            await bitmap.SetSourceAsync(stream);
+            PhoneQrImage.Source = bitmap;
+        }
+        catch (Exception)
+        {
+            // QR не нарисовался — ссылка текстом ниже всё равно работает.
+        }
+    }
+
+    private void OnPhoneCommand(string command)
+    {
+        // Событие приходит из сетевого потока — команды выполняет UI-поток.
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            switch (command)
+            {
+                case "start":
+                    if (ViewModel.StartCommand.CanExecute(null)) ViewModel.StartCommand.Execute(null);
+                    break;
+                case "pause":
+                    if (ViewModel.PauseCommand.CanExecute(null)) ViewModel.PauseCommand.Execute(null);
+                    break;
+                case "resume":
+                    if (ViewModel.ResumeCommand.CanExecute(null)) ViewModel.ResumeCommand.Execute(null);
+                    break;
+                case "reset":
+                    ViewModel.ResetCommand.Execute(null);
+                    break;
+                case "add":
+                    if (ViewModel.AddMinuteCommand.CanExecute(null)) ViewModel.AddMinuteCommand.Execute(null);
+                    break;
+                case "skip":
+                    if (ViewModel.SkipPhaseCommand.CanExecute(null)) ViewModel.SkipPhaseCommand.Execute(null);
+                    break;
+            }
+        });
+    }
+
+    private void OnPhoneQuickStart(string text)
+    {
+        DispatcherQueue.TryEnqueue(() => ViewModel.QuickStart(text));
+    }
+
+    /// <summary>Снимок состояния для страницы телефона.</summary>
+    private void UpdatePhoneState()
+    {
+        _phoneRemote.UpdateState(new RemoteStateSnapshot
+        {
+            State = ViewModel.State.ToString(),
+            DisplayTime = ViewModel.DisplayTime,
+            StatusText = ViewModel.StatusText,
+            EndTimeText = ViewModel.EndTimeText,
+            TimerName = ViewModel.TimerName,
+            Progress = ViewModel.Progress,
+            ShowStart = ViewModel.ShowStart,
+            IsRunning = ViewModel.IsRunning,
+            IsPaused = ViewModel.IsPaused,
+            IsFinished = ViewModel.IsFinished,
+            IntervalActive = ViewModel.IsIntervalActive,
+            PhaseName = ViewModel.CurrentIntervalPhaseName,
+            RoundText = ViewModel.IntervalRoundText
+        });
     }
 
     private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
@@ -138,6 +258,7 @@ public sealed partial class MainWindow : Window
         InputSection.Visibility = sectionVisibility;
         PresetsSection.Visibility = sectionVisibility;
         IntervalSection.Visibility = sectionVisibility;
+        PhoneSection.Visibility = sectionVisibility;
         SoundSection.Visibility = sectionVisibility;
         HotkeysHint.Visibility = sectionVisibility;
         MuteTitleButton.Visibility = sectionVisibility;
@@ -474,6 +595,9 @@ public sealed partial class MainWindow : Window
         ViewModel.PersistAll();
         ViewModel.TimerFinished -= OnTimerFinished;
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        _phoneRemote.CommandReceived -= OnPhoneCommand;
+        _phoneRemote.QuickStartReceived -= OnPhoneQuickStart;
+        _phoneRemote.Dispose();
         _timerService.Dispose();
         _soundService.Dispose();
     }
